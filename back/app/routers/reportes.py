@@ -14,9 +14,12 @@ router = APIRouter()
 @router.get("/ventas-por-mes", response_model=list[VentasMes])
 def ventas_por_mes(db: Database = Depends(get_db)):
     """B1: total vendido y número de reservas por mes, sin contar canceladas."""
+    # creada se guarda en UTC, pero el mes del reporte es el de Colombia: sin la zona, una reserva
+    # del 31 de diciembre a las 10 p. m. en Bogotá caería en enero.
     return list(db.reservas.aggregate([
         {"$match": {"estado": {"$ne": "Cancelada"}}},
-        {"$group": {"_id": {"anio": {"$year": "$creada"}, "mes": {"$month": "$creada"}},
+        {"$group": {"_id": {"anio": {"$year": {"date": "$creada", "timezone": "America/Bogota"}},
+                            "mes": {"$month": {"date": "$creada", "timezone": "America/Bogota"}}},
                     "total_vendido": {"$sum": "$total"}, "reservas": {"$sum": 1}}},
         {"$sort": {"_id.anio": 1, "_id.mes": 1}},
         {"$project": {"_id": 0, "anio": "$_id.anio", "mes": "$_id.mes",
@@ -40,7 +43,7 @@ def destinos_mas_vendidos(db: Database = Depends(get_db)):
                     "ingresos": {"$sum": "$items.subtotal"},
                     "pasajeros": {"$sum": {"$cond": [
                         {"$in": ["$items.tipo", ["vuelo", "paquete"]]}, "$items.cantidad", 0]}}}},
-        {"$sort": {"ingresos": -1}},
+        {"$sort": {"ingresos": -1, "_id": 1}},     # _id = código IATA; antes del $limit: el corte también es determinista
         {"$limit": 5},
         {"$project": {"_id": 0, "ciudad": "$_id", "ingresos": 1, "pasajeros": 1}},
     ]))
@@ -55,7 +58,10 @@ def ocupacion_vuelos(db: Database = Depends(get_db)):
                       "vendidas": {"$sum": {"$map": {"input": "$tarifas", "as": "t",
                           "in": {"$subtract": ["$$t.sillas", "$$t.libres"]}}}}}},
         {"$project": {"codigo": 1, "sillas_totales": 1, "vendidas": 1,
-                      "ocupacion_pct": {"$cond": [{"$eq": ["$sillas_totales", 0]}, 0,   # vuelo sin tarifas
-                          {"$round": [{"$multiply": [{"$divide": ["$vendidas", "$sillas_totales"]}, 100]}, 1]}]}}},
-        {"$sort": {"ocupacion_pct": -1}},
+                      "ocupacion_cruda": {"$cond": [{"$eq": ["$sillas_totales", 0]}, 0,   # vuelo sin tarifas
+                          {"$divide": [{"$multiply": [100, "$vendidas"]}, "$sillas_totales"]}]}}},
+        # Se ordena por el valor sin redondear: dos vuelos que muestran 53.8 no son necesariamente iguales.
+        {"$sort": {"ocupacion_cruda": -1, "codigo": 1}},
+        {"$project": {"codigo": 1, "sillas_totales": 1, "vendidas": 1,
+                      "ocupacion_pct": {"$round": ["$ocupacion_cruda", 1]}}},
     ]))
