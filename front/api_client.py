@@ -1,16 +1,21 @@
+"""front/api_client.py — Único puente entre Streamlit y la API (Streamlit nunca habla con Mongo)."""
+import os
+
 import requests
 
-URL_BASE = "http://localhost:8000"
+URL_BASE = os.getenv("API_URL", "http://localhost:8000")
 
-def get_all_pacientes():
-    return requests.get(f"{URL_BASE}/pacientes/").json()
 
-def get_paciente_by_id(paciente_id):
-    return requests.get(f"{URL_BASE}/pacientes/{paciente_id}")
+def get(ruta: str, **params):
+    return requests.get(f"{URL_BASE}{ruta}", params=params, timeout=10)
 
-def create_paciente(payload):
-    return requests.post(f"{URL_BASE}/pacientes/", json=payload)
 
-# Aquí los estudiantes agregarán las funciones para tratamientos, etc.
-def get_tratamientos():
-    return requests.get(f"{URL_BASE}/tratamientos/").json()
+def post(ruta: str, datos: dict):
+    return requests.post(f"{URL_BASE}{ruta}", json=datos, timeout=10)
+
+
+def api_en_linea() -> bool:
+    try:
+        return get("/").status_code == 200
+    except requests.RequestException:
+        return False

@@ -1,18 +1,17 @@
+"""front/app.py — Portada de Brújula Viajes. Correr desde front/:  streamlit run app.py"""
 import streamlit as st
 
-st.set_page_config(
-    page_title="OrthoConnect Pro",
-    page_icon="🦷",
-    layout="wide"
-)
+import api_client
 
-st.title("Bienvenido a OrthoConnect Pro")
-st.markdown("""
-Esta es la plataforma central de gestión clínica. 
-Utilice el **menú lateral** para navegar entre los diferentes módulos:
-- **Pacientes:** Registro y consulta.
-- **Tratamientos:** Gestión de procedimientos activos.
-- **Reportes:** Estadísticas de eficacia y atención.
-""")
+st.set_page_config(page_title="Brújula Viajes", page_icon="🧭", layout="wide")
+st.title("Brújula Viajes")
+st.caption("Vuelos nacionales, hoteles, tours y paquetes")
 
-st.info("Seleccione un módulo para comenzar.")
+if api_client.api_en_linea():
+    st.success("API en línea")
+    ciudades = api_client.get("/ciudades/").json()
+    st.write(f"Destinos disponibles: {', '.join(c['nombre'] for c in ciudades) or 'ninguno aún'}")
+else:
+    st.error("La API no responde. Levántala desde back/ con:  uvicorn main:app --reload")
+
+st.info("Las páginas de catálogo y reservas se agregan en el módulo de Streamlit.")
