@@ -1,3 +1,41 @@
+# Variables de entorno y secretos (la plantilla .env.example sí se sube)
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Entornos virtuales de Python
+.venv/
+venv/
+env/
+
+# Python: caché y compilados
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Pruebas y cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Logs y respaldos de MongoDB (mongodump guarda en dump/ y puede tener datos personales)
+*.log
+dump/
+
+# Editores
+.idea/
+.vscode/
+
+# Sistema operativo y OneDrive
+.DS_Store
+Thumbs.db
+desktop.ini
+
 # Node rules:
 ## Grunt intermediate storage (http://gruntjs.com/creating-plugins#storing-task-files)
 .grunt
