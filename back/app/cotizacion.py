@@ -24,14 +24,14 @@ def _tarifa(vuelo: dict, nombre: str) -> dict:
     for t in vuelo.get("tarifas", []):
         if t["nombre"] == nombre:
             return t
-    raise HTTPException(400, f"El vuelo {vuelo['codigo']} no tiene tarifa {nombre}")
+    raise HTTPException(404, f"El vuelo {vuelo['codigo']} no tiene tarifa {nombre}")
 
 
 def habitacion(hotel: dict, tipo: str) -> dict:
     for h in hotel.get("habitaciones", []):
         if h["tipo"] == tipo:
             return h
-    raise HTTPException(400, f"El hotel {hotel['nombre']} no tiene habitaciones {tipo}")
+    raise HTTPException(404, f"El hotel {hotel['nombre']} no tiene habitaciones {tipo}")
 
 
 def habitaciones_para(personas: int, capacidad: int) -> int:
@@ -41,13 +41,13 @@ def habitaciones_para(personas: int, capacidad: int) -> int:
 def _salida_del_tour(db: Database, tour: dict, salida_id: ObjectId) -> dict:
     salida = buscar_o_404(db.salidas, {"_id": salida_id}, "Salida")
     if salida["tour_id"] != tour["_id"]:
-        raise HTTPException(400, "La salida no pertenece a ese tour")
+        raise HTTPException(409, "La salida no pertenece a ese tour")
     return salida
 
 
 def _futuro(fecha: datetime, ahora: datetime, que: str) -> None:
     if fecha <= ahora:
-        raise HTTPException(400, f"{que} ya pasó")
+        raise HTTPException(409, f"{que} ya pasó")
 
 
 # ───────────────────────────── Ítems de reserva ─────────────────────────────
@@ -73,7 +73,7 @@ def cotizar_hotel(db: Database, hotel_id: ObjectId, tipo_hab: str,
                   entrada: datetime, salida: datetime, personas: int, ahora: datetime):
     h = buscar_o_404(db.hoteles, {"_id": hotel_id}, "Hotel")
     if entrada < a_utc(ahora.date()):
-        raise HTTPException(400, "La fecha de entrada ya pasó")
+        raise HTTPException(409, "La fecha de entrada ya pasó")
     hab = habitacion(h, tipo_hab)
     noches = (salida - entrada).days
     cuartos = habitaciones_para(personas, hab["capacidad"])
@@ -89,7 +89,7 @@ def cotizar_tour(db: Database, tour_id: ObjectId, salida_id: ObjectId, n: int, a
     s = _salida_del_tour(db, t, salida_id)
     _futuro(s["fecha"], ahora, f"La salida del tour {t['nombre']}")
     if not t.get("ciudad"):
-        raise HTTPException(400, f"El tour {t['nombre']} no tiene ciudad registrada")
+        raise HTTPException(409, f"El tour {t['nombre']} no tiene ciudad registrada")
     fin = s["fecha"] + timedelta(hours=t.get("horas") or 0)
     item = _item("tour", t["_id"], {"salida_id": s["_id"]}, t["nombre"], t["ciudad"],
                  s["fecha"], fin, n, s["precio"])
@@ -99,9 +99,9 @@ def cotizar_tour(db: Database, tour_id: ObjectId, salida_id: ObjectId, n: int, a
 def cotizar_paquete(db: Database, paquete_id: ObjectId, personas: int, ahora: datetime):
     p = buscar_o_404(db.paquetes, {"_id": paquete_id}, "Paquete")
     if "desde" in p and ahora < p["desde"]:
-        raise HTTPException(400, "El paquete aún no está a la venta")
+        raise HTTPException(409, "El paquete aún no está a la venta")
     if "hasta" in p and ahora >= p["hasta"] + timedelta(days=1):     # 'hasta' incluye todo ese día
-        raise HTTPException(400, "El paquete ya no está a la venta")
+        raise HTTPException(409, "El paquete ya no está a la venta")
 
     movimientos, inicios, fines = [], [], []
     for c in p["componentes"]:

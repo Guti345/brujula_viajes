@@ -44,7 +44,7 @@ def crear_paquete(paquete: PaqueteCreate, db: Database = Depends(get_db)):
 
     desde, hasta = a_utc(paquete.desde), a_utc(paquete.hasta)
     if hasta + timedelta(days=1) > min(fechas):               # decisión punto 4
-        raise HTTPException(400, "La venta debe cerrar (hasta) a más tardar el día anterior al viaje")
+        raise HTTPException(409, "La venta debe cerrar (hasta) a más tardar el día anterior al viaje")
 
     doc = {"nombre": paquete.nombre, "destino": paquete.destino, "descuento": paquete.descuento,
            "desde": desde, "hasta": hasta, "componentes": componentes}

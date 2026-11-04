@@ -11,7 +11,7 @@ router = APIRouter()
 def exigir_ciudad(db: Database, iata: str) -> None:
     """Mongo no valida referencias entre colecciones: se hace aquí."""
     if not db.ciudades.find_one({"iata": iata}, {"_id": 1}):
-        raise HTTPException(400, f"La ciudad {iata} no existe")
+        raise HTTPException(404, f"La ciudad {iata} no existe")
 
 
 @router.get("/", response_model=list[CiudadResponse])

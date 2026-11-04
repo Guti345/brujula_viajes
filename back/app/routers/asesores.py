@@ -12,9 +12,9 @@ def asesor_activo(db: Database, codigo: str) -> dict:
     """historial.usuario guarda asesores.codigo (punto 9); solo un asesor activo puede operar."""
     a = db.asesores.find_one({"codigo": codigo})
     if not a:
-        raise HTTPException(400, f"El asesor {codigo} no existe")
+        raise HTTPException(404, f"El asesor {codigo} no existe")
     if not a.get("activo", True):
-        raise HTTPException(400, f"El asesor {codigo} está inactivo")
+        raise HTTPException(409, f"El asesor {codigo} está inactivo")
     return a
 
 

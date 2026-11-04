@@ -50,7 +50,7 @@ def listar_salidas(tour_id: str, solo_futuras: bool = True, db: Database = Depen
 def crear_salida(tour_id: str, salida: SalidaCreate, db: Database = Depends(get_db)):
     t = buscar_o_404(db.tours, {"_id": oid_o_404(tour_id, "Tour")}, "Tour")
     if salida.tour_id != str(t["_id"]):
-        raise HTTPException(400, "tour_id del cuerpo no coincide con el de la URL")
+        raise HTTPException(409, "tour_id del cuerpo no coincide con el de la URL")
     doc = salida.model_dump()
     doc.update(tour_id=t["_id"], libres=salida.cupos)          # inventario nace lleno
     r = db.salidas.insert_one(doc)                             # misma fecha -> 409

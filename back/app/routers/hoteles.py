@@ -71,7 +71,7 @@ def generar_noches(hotel_id: str, datos: NochesGenerar, db: Database = Depends(g
             ops.append(UpdateOne({"hotel_id": h["_id"], "tipo": tipo, "fecha": fecha},
                                  {"$setOnInsert": {"libres": cantidad}}, upsert=True))
     if not ops:
-        raise HTTPException(400, "El hotel no tiene habitaciones registradas")
+        raise HTTPException(409, "El hotel no tiene habitaciones registradas")
     r = db.noches.bulk_write(ops, ordered=False)          # un solo viaje a la base
     return {"creadas": r.upserted_count, "existentes": len(ops) - r.upserted_count}
 
@@ -91,7 +91,7 @@ def disponibilidad(hotel_id: str, tipo: TipoHab, entrada: date, salida: date,
                    personas: int = Query(1, ge=1), db: Database = Depends(get_db)):
     """'Verificar' del modelo: todas las noches de [entrada, salida) deben tener libres >= n."""
     if salida <= entrada:
-        raise HTTPException(400, "salida debe ser posterior a entrada")
+        raise HTTPException(422, "salida debe ser posterior a entrada")
     h = buscar_o_404(db.hoteles, {"_id": oid_o_404(hotel_id, "Hotel")}, "Hotel")
     n = habitaciones_para(personas, habitacion(h, tipo)["capacidad"])
     noches = rango_noches(a_utc(entrada), a_utc(salida))

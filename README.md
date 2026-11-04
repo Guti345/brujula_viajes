@@ -110,6 +110,24 @@ Los pasajeros de cada destino son una métrica por ítems: suman la cantidad de 
 - **Disponibilidad:** si no hay inventario suficiente, la API responde `409`.
 - **Pagos e historial:** un pago no puede superar el saldo pendiente, y la reserva guarda el historial de sus estados.
 
+## Códigos HTTP
+
+| Código | Cuándo |
+|---|---|
+| `201` | Al crear un recurso |
+| `404` | El recurso no existe: reserva, cliente, asesor, vuelo, hotel, tour, salida, paquete, ciudad, o la tarifa o tipo de habitación pedido dentro de un producto |
+| `409` | Se incumple una regla, por ejemplo: sin cupo, llave única duplicada, asesor inactivo, fecha ya pasada, paquete fuera de su ventana de venta, pago a reserva cancelada, pago que supera el saldo, doble cancelación o referencias inconsistentes |
+| `422` | Datos inválidos, según Pydantic o el validador de MongoDB |
+| `500` | Error interno |
+| `503` | MongoDB no responde |
+
+Los errores de negocio no usan `400`. Una petición mal formada a nivel de transporte o protocolo puede recibir `400` del framework antes de llegar a la aplicación.
+
+## Límites conocidos
+
+- **Reservas sin transacción:** crear o cancelar una reserva no es una sola operación atómica. El inventario se descuenta o el estado cambia primero, y la compensación o devolución va después. Una caída en medio puede dejar inventario pendiente de revisión manual. El enunciado no exige transacciones.
+- **Concurrencia sin medir:** el descuento condicional por documento está diseñado para evitar la sobreventa entre peticiones simultáneas, pero no se probó con concurrencia real. Es una propiedad del diseño, no una garantía medida.
+
 ## Secretos
 
 Este README no incluye connection strings reales ni contraseñas, y `.env.example` solo trae marcadores. Las credenciales van únicamente en tu `.env`.

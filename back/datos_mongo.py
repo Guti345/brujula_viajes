@@ -299,12 +299,12 @@ def pruebas_negativas(post, get, cat, c, a, creadas, dia):
                         "items": [{"tipo": "vuelo", "ref_id": v["WG7310"], "tarifa": "Basica", "cantidad": 3}]},
          esperado=409, nota="Sobreventa de vuelo")
     post(f"/reservas/{pend['codigo']}/pagos", {"valor": pend["saldo"] + 1, "medio": "PSE", "usuario": "AS-01"},
-         esperado=400, nota="Sobrepago")
+         esperado=409, nota="Sobrepago")
     post(f"/reservas/{canc}/pagos", {"valor": 1000, "medio": "PSE", "usuario": "AS-01"},
-         esperado=400, nota="Pago a reserva cancelada")
-    post(f"/reservas/{canc}/cancelar", {"usuario": "AS-01"}, esperado=400, nota="Doble cancelación")
+         esperado=409, nota="Pago a reserva cancelada")
+    post(f"/reservas/{canc}/cancelar", {"usuario": "AS-01"}, esperado=409, nota="Doble cancelación")
     post(f"/reservas/{pend['codigo']}/pagos", {"valor": 1000, "medio": "PSE", "usuario": "AS-03"},
-         esperado=400, nota="Asesor inactivo")
+         esperado=409, nota="Asesor inactivo")
     post("/vuelos/", {"codigo": "XX1", "aerolinea": "X", "origen": "BOG", "destino": "CTG",
                       "sale": f"{dia(20)}T10:00:00-05:00", "llega": f"{dia(20)}T11:00:00-05:00",
                       "tarifas": [{"nombre": "Basica", "precio": 1, "equipaje": "x", "sillas": 1, "libres": 999}]},
@@ -348,7 +348,11 @@ def pruebas_negativas(post, get, cat, c, a, creadas, dia):
     finally:
         for _id in creados:
             db.vuelos.delete_one({"_id": _id})
-    assert db.vuelos.count_documents({"codigo": {"$in": ["TESTV1", "TESTV2"]}}) == 0, "quedó un vuelo de prueba"
+
+    get("/reservas/NOEXISTE", esperado=404, nota="Reserva inexistente")
+    post("/vuelos/", {**base_v, "origen": "XXX", "codigo": "TESTV3", "tarifas": [tarifa]},
+         esperado=404, nota="Vuelo con ciudad de origen inexistente")
+    assert db.vuelos.count_documents({"codigo": {"$in": ["TESTV1", "TESTV2", "TESTV3"]}}) == 0, "quedó un vuelo de prueba"
 
 
 # ─────────────────── Fechas de demostración: en producción las pone la API ───────────────────

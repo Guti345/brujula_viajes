@@ -138,8 +138,8 @@ def registrar_pago(codigo: str, pago: PagoCreate, db: Database = Depends(get_db)
     if r is None:                                   # explicar por qué no se aplicó
         actual = buscar_o_404(db.reservas, {"codigo": codigo}, "Reserva")
         if actual["estado"] == "Cancelada":
-            raise HTTPException(400, "No se aceptan pagos en una reserva cancelada")
-        raise HTTPException(400, f"El pago supera el saldo pendiente ({actual['total'] - actual['pagado']})")
+            raise HTTPException(409, "No se aceptan pagos en una reserva cancelada")
+        raise HTTPException(409, f"El pago supera el saldo pendiente ({actual['total'] - actual['pagado']})")
     return r
 
 
@@ -165,6 +165,6 @@ def cancelar_reserva(codigo: str, datos: CancelarReserva, db: Database = Depends
     )
     if r is None:
         buscar_o_404(db.reservas, {"codigo": codigo}, "Reserva")
-        raise HTTPException(400, "La reserva ya estaba cancelada")
+        raise HTTPException(409, "La reserva ya estaba cancelada")
     devolver_todo(db, movimientos_de_reserva(db, r))
     return r
