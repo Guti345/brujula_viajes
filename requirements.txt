@@ -10,5 +10,5 @@ python-dotenv==1.2.4
 streamlit==1.66.1
 requests==2.34.2
 
-# Datos de prueba (TestClient en back/seed.py)
+# Datos de inicio (TestClient en back/datos_mongo.py)
 httpx2==2.16.0
