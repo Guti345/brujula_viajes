@@ -10,10 +10,13 @@ Ejecutar una vez desde back/ (idempotente):  python -m app.database
 """
 import os
 
+from dotenv import load_dotenv
 from pymongo import ASCENDING, GEOSPHERE, IndexModel, MongoClient
 from pymongo.database import Database
 
 # ─────────────────────────────── Conexión ───────────────────────────────
+load_dotenv()
+
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.getenv("MONGO_DB", "brujula_viajes")
 
