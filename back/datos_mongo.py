@@ -17,6 +17,7 @@ import sys
 from datetime import date, datetime, timedelta
 
 from fastapi.testclient import TestClient
+from pymongo.errors import WriteError
 
 from app.database import DB_NAME, client
 from app.utils import BOGOTA, a_utc, ahora
@@ -308,6 +309,46 @@ def pruebas_negativas(post, get, cat, c, a, creadas, dia):
                       "sale": f"{dia(20)}T10:00:00-05:00", "llega": f"{dia(20)}T11:00:00-05:00",
                       "tarifas": [{"nombre": "Basica", "precio": 1, "equipaje": "x", "sillas": 1, "libres": 999}]},
          esperado=422, nota="Cliente intenta fijar 'libres'")
+
+    # Mínimo 1 tarifa por vuelo y 1 tipo de habitación por hotel: la API responde 422 y Mongo 121
+    db = client[DB_NAME]
+    base_v = {"aerolinea": "X", "origen": "BOG", "destino": "CTG",
+              "sale": f"{dia(20)}T10:00:00-05:00", "llega": f"{dia(20)}T11:00:00-05:00"}
+    base_h = {"nombre": "Hotel de prueba", "ciudad": "CTG", "direccion": "Cl. 1", "estrellas": 3}
+    post("/vuelos/", {**base_v, "codigo": "TESTV1", "tarifas": []}, esperado=422, nota="API: vuelo con tarifas vacías")
+    post("/vuelos/", {**base_v, "codigo": "TESTV1"}, esperado=422, nota="API: vuelo sin tarifas")
+    post("/hoteles/", {**base_h, "habitaciones": []}, esperado=422, nota="API: hotel con habitaciones vacías")
+    post("/hoteles/", base_h, esperado=422, nota="API: hotel sin habitaciones")
+
+    directo_v = {**base_v, "sale": datetime.fromisoformat(base_v["sale"]), "llega": datetime.fromisoformat(base_v["llega"])}
+    for texto, col, doc, campo in [
+        ("vuelo sin tarifas", db.vuelos, {**directo_v, "codigo": "TESTV1"}, "tarifas"),
+        ("vuelo con tarifas vacías", db.vuelos, {**directo_v, "codigo": "TESTV1", "tarifas": []}, "tarifas"),
+        ("hotel sin habitaciones", db.hoteles, {**base_h}, "habitaciones"),
+        ("hotel con habitaciones vacías", db.hoteles, {**base_h, "habitaciones": []}, "habitaciones"),
+    ]:
+        try:
+            col.insert_one(doc)
+        except WriteError as e:     # el campo en errInfo aísla el 121 de cualquier otra regla del esquema
+            assert e.code == 121 and campo in str(e.details), (texto, e.details)
+            print(f"  [ok] Mongo: {texto}: rechazado con código 121")
+        else:
+            raise SystemExit(f"\n[x] Mongo aceptó: {texto}")
+
+    # Una tarifa con 0 sillas sigue siendo válida: el guard de B3 cubre sillas_totales = 0
+    tarifa = {"nombre": "Basica", "precio": 1, "equipaje": "x", "sillas": 0}
+    creados = []
+    try:
+        post("/vuelos/", {**base_v, "codigo": "TESTV2", "tarifas": [tarifa]}, nota="API: una tarifa con 0 sillas")
+        creados.append(db.vuelos.find_one({"codigo": "TESTV2"})["_id"])
+        db.vuelos.delete_one({"_id": creados.pop()})
+        creados.append(db.vuelos.insert_one({**directo_v, "codigo": "TESTV2",
+                                             "tarifas": [{**tarifa, "libres": 0}]}).inserted_id)
+        print("  [ok] Mongo: una tarifa con 0 sillas: aceptada")
+    finally:
+        for _id in creados:
+            db.vuelos.delete_one({"_id": _id})
+    assert db.vuelos.count_documents({"codigo": {"$in": ["TESTV1", "TESTV2"]}}) == 0, "quedó un vuelo de prueba"
 
 
 # ─────────────────── Fechas de demostración: en producción las pone la API ───────────────────

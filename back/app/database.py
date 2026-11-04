@@ -138,12 +138,14 @@ EVENTO = obj(
 VALIDADORES: dict[str, dict] = {
     "ciudades": {"$jsonSchema": obj({"iata": IATA, "nombre": STR}, ["iata", "nombre"])},
 
+    # tarifas y habitaciones llevan minItems Y required: minItems solo se evalúa cuando el campo
+    # existe, así que sin required un documento que omita el arreglo pasaría la validación.
     "vuelos": {"$and": [
         {"$jsonSchema": obj(
             {"codigo": STR, "aerolinea": STR, "origen": IATA, "destino": IATA,
              "sale": DATE, "llega": DATE,
-             "tarifas": {"bsonType": "array", "maxItems": 3, "items": TARIFA}},
-            ["codigo", "aerolinea", "origen", "destino", "sale", "llega"],
+             "tarifas": {"bsonType": "array", "minItems": 1, "maxItems": 3, "items": TARIFA}},
+            ["codigo", "aerolinea", "origen", "destino", "sale", "llega", "tarifas"],
         )},
         {"$expr": {"$and": [
             {"$gt": ["$llega", "$sale"]},
@@ -158,8 +160,8 @@ VALIDADORES: dict[str, dict] = {
             {"nombre": STR, "ciudad": IATA, "direccion": STR,
              "estrellas": {"bsonType": ["int", "long"], "minimum": 1, "maximum": 5},
              "servicios": STR_ARR, "ubicacion": POINT,
-             "habitaciones": {"bsonType": "array", "maxItems": 4, "items": HABITACION}},
-            ["nombre", "ciudad", "direccion", "estrellas"],
+             "habitaciones": {"bsonType": "array", "minItems": 1, "maxItems": 4, "items": HABITACION}},
+            ["nombre", "ciudad", "direccion", "estrellas", "habitaciones"],
         )},
         {"$expr": unicos("$habitaciones", "$habitaciones.tipo")},
     ]},

@@ -120,7 +120,7 @@ class VueloCreate(Entrada):
     destino: Iata
     sale: AwareDatetime
     llega: AwareDatetime
-    tarifas: list[TarifaCreate] = Field(default_factory=list, max_length=3)
+    tarifas: list[TarifaCreate] = Field(min_length=1, max_length=3)     # "una o más tarifas"
 
     @model_validator(mode="after")
     def _coherencia(self):
@@ -157,7 +157,7 @@ class HotelCreate(Entrada):
     estrellas: Annotated[int, Field(ge=1, le=5)]
     servicios: list[Texto] = Field(default_factory=list)
     ubicacion: Punto | None = None
-    habitaciones: list[Habitacion] = Field(default_factory=list, max_length=4)
+    habitaciones: list[Habitacion] = Field(min_length=1, max_length=4)
 
     @field_validator("habitaciones")
     @classmethod
