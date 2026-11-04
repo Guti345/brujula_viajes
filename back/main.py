@@ -12,7 +12,7 @@ from pymongo.errors import DuplicateKeyError, OperationFailure, ServerSelectionT
 
 from app.database import init_db
 from app.inventario import SinDisponibilidad
-from app.routers import asesores, ciudades, clientes, hoteles, paquetes, reservas, tours, vuelos
+from app.routers import asesores, ciudades, clientes, hoteles, paquetes, reportes, reservas, tours, vuelos
 
 
 @asynccontextmanager
@@ -36,6 +36,7 @@ app.include_router(paquetes.router, prefix="/paquetes", tags=["Paquetes"])
 app.include_router(clientes.router, prefix="/clientes", tags=["Clientes"])
 app.include_router(asesores.router, prefix="/asesores", tags=["Asesores"])
 app.include_router(reservas.router, prefix="/reservas", tags=["Reservas"])
+app.include_router(reportes.router, prefix="/reportes", tags=["Reportes"])
 
 
 # ─────────────── Errores de Mongo -> respuestas HTTP claras ───────────────

@@ -519,3 +519,24 @@ class DisponibilidadResponse(BaseModel):
     noches: int
     disponible: bool
     faltan: list[date]            # noches sin cupo o sin generar (el modelo pide reportar cuál)
+
+
+# ─────────────────────────────── reportes (B1-B3) ───────────────────────────────
+class VentasMes(BaseModel):
+    anio: int
+    mes: int
+    total_vendido: Numero
+    reservas: int
+
+
+class DestinoVendido(BaseModel):
+    ciudad: str
+    ingresos: Numero
+    pasajeros: int                # interpretación por ítems, ver routers/reportes.py
+
+
+class OcupacionVuelo(BaseModel):
+    codigo: str
+    sillas_totales: int
+    vendidas: int
+    ocupacion_pct: float
