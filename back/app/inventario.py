@@ -107,5 +107,5 @@ def devolver_todo(db: Database, movimientos: list[Movimiento]) -> None:
             m.hechas = rango_noches(m.entrada, m.salida)
         try:
             _DEVOLVER[m.tipo](db, m)
-        except Exception:                           # no se detiene: registra para revisión manual
-            log.exception("No se pudo devolver inventario: %s", m)
+        except Exception as e:                      # no se detiene: registra para revisión manual
+            log.error("No se pudo devolver inventario tipo=%s error=%s", m.tipo, type(e).__name__)

@@ -116,17 +116,23 @@ Los pasajeros de cada destino son una métrica por ítems: suman la cantidad de 
 |---|---|
 | `201` | Al crear un recurso |
 | `404` | El recurso no existe: reserva, cliente, asesor, vuelo, hotel, tour, salida, paquete, ciudad, o la tarifa o tipo de habitación pedido dentro de un producto |
-| `409` | Se incumple una regla, por ejemplo: sin cupo, llave única duplicada, asesor inactivo, fecha ya pasada, paquete fuera de su ventana de venta, pago a reserva cancelada, pago que supera el saldo, doble cancelación o referencias inconsistentes |
-| `422` | Datos inválidos, según Pydantic o el validador de MongoDB |
-| `500` | Error interno |
-| `503` | MongoDB no responde |
+| `409` | Se incumple una regla, por ejemplo: sin cupo, llave única duplicada, asesor inactivo, fecha ya pasada, paquete fuera de su ventana de venta, pago a reserva cancelada, pago que supera el saldo, doble cancelación o referencias inconsistentes. Una llave duplicada responde `{"detail": "Ya existe un registro con ese identificador único"}`, sin el valor duplicado ni el nombre del campo |
+| `422` | Datos inválidos, según Pydantic o el validador de MongoDB. El rechazo del validador responde solo `{"detail": "El documento no cumple el esquema de la base"}`, sin `errInfo`; una escritura masiva en la que todos los errores son de validación responde el mismo texto |
+| `500` | Hay dos casos. **Error interno inesperado**, incluido un documento de MongoDB que no cumple el `response_model`: la API responde `{"detail": "Error interno del servidor"}` y registra el fallo en su propio log sin datos sensibles (sin mensajes de error que puedan traer valores, sin URLs reales y sin cuerpos de petición). **Agotamiento de reintentos al generar el código único de reserva:** es la única excepción con mensaje propio, porque ese mensaje es seguro de mostrar |
+| `503` | MongoDB no responde o se perdió la conexión. Es un fallo de infraestructura, no de los datos del cliente. Los errores de operación que sí llegaron al servidor no son `503` |
 
 Los errores de negocio no usan `400`. Una petición mal formada a nivel de transporte o protocolo puede recibir `400` del framework antes de llegar a la aplicación.
 
+Si falla una devolución de inventario, el log registra solo el tipo de movimiento y la clase del error, con nivel `ERROR`.
+
 ## Límites conocidos
+
+- **Log del servidor:** cuando el handler general de `Exception` responde `500`, Starlette y uvicorn pueden reemitir la excepción al log del servidor, fuera del logger propio `brujula`. Eso no se controla sin middleware adicional, que no se agrega en este proyecto. Por eso, el saneamiento descrito aquí aplica al logger `brujula`, no a todos los registros del servidor.
 
 - **Reservas sin transacción:** crear o cancelar una reserva no es una sola operación atómica. El inventario se descuenta o el estado cambia primero, y la compensación o devolución va después. Una caída en medio puede dejar inventario pendiente de revisión manual. El enunciado no exige transacciones.
 - **Concurrencia sin medir:** el descuento condicional por documento está diseñado para evitar la sobreventa entre peticiones simultáneas, pero no se probó con concurrencia real. Es una propiedad del diseño, no una garantía medida.
+- **Escrituras tras un `503`:** si una escritura falla con `503` por un corte de red, no se puede saber si MongoDB llegó a aplicarla; así lo documenta PyMongo para `NetworkTimeout`. La API no reintenta escrituras automáticamente para no arriesgar duplicados, como un pago doble. Ante un `503`, revisa el estado antes de reintentar a mano.
+- **MongoDB apagado:** la API no arranca, porque `init_db` hace ping al iniciar. Si MongoDB cae a mitad de una petición, la API responde `503`.
 
 ## Secretos
 
