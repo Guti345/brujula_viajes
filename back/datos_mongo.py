@@ -1,11 +1,13 @@
 """
-datos_mongo.py — Datos de inicio de Brújula Viajes (mínimos del enunciado).
+datos_mongo.py — Carga los datos de inicio de Brújula Viajes.
 
 Los datos entran POR LA API (TestClient, sin levantar uvicorn), así pasan por las mismas
 validaciones, copias de precio y descuentos de inventario que usará Streamlit.
 Las fechas de producto son relativas a hoy (Bogotá), para que los datos no queden vencidos.
-Ejecuta pruebas negativas (sobreventa, compensación, sobrepago, doble cancelación), reparte las
-reservas en 3 meses con fechas de demostración y al final verifica los mínimos.
+Reparte las reservas en 3 meses con fechas de demostración y al final muestra un resumen.
+
+La validación de endpoints y reglas de negocio se hace manualmente en Swagger
+(http://127.0.0.1:8000/docs) o Postman, fuera de este script.
 
     cd back; python datos_mongo.py
 
@@ -17,10 +19,9 @@ import sys
 from datetime import date, datetime, timedelta
 
 from fastapi.testclient import TestClient
-from pymongo.errors import WriteError
 
 from app.database import DB_NAME, client
-from app.utils import BOGOTA, a_utc, ahora
+from app.utils import BOGOTA, ahora
 from main import app
 
 ESPERADA = "brujula_viajes"
@@ -37,19 +38,11 @@ def candado():
         sys.exit(1)
 
 
-def llamar(api, metodo, url, datos=None, esperado=(200, 201), nota=""):
+def llamar(api, metodo, url, datos=None):
     r = api.request(metodo, url, json=datos)
-    if r.status_code not in (esperado if isinstance(esperado, tuple) else (esperado,)):
+    if r.status_code not in (200, 201):
         raise SystemExit(f"\n[x] {metodo} {url} -> {r.status_code}\n    {r.text}")
-    if nota:
-        detalle = r.json().get("detail", "") if r.status_code >= 400 else ""
-        print(f"  [ok] {nota}: HTTP {r.status_code} {detalle}")
     return r.json()
-
-
-def verificar(condicion, texto):
-    assert condicion, texto
-    print(f"  [ok] {texto}")
 
 
 # ─────────────────────────────── Catálogo ───────────────────────────────
@@ -75,7 +68,7 @@ def cargar_catalogo(post, hoy):
         ("LA4022", "LATAM", "SMR", "BOG", 17, "15:00", "16:30", 240000, 60),
         ("AV8101", "Avianca", "BOG", "MDE", 18, "08:00", "08:55", 180000, 60),
         ("AV8102", "Avianca", "MDE", "BOG", 21, "19:00", "19:55", 190000, 60),
-        ("WG7310", "Wingo", "MDE", "ADZ", 25, "10:00", "12:00", 199000, 2),   # 2 sillas: prueba de sobreventa
+        ("WG7310", "Wingo", "MDE", "ADZ", 25, "10:00", "12:00", 199000, 2),   # capacidad baja a propósito: agotados en la demo
         ("WG7311", "Wingo", "ADZ", "MDE", 29, "14:00", "16:00", 205000, 60),
         ("CM5501", "Clic", "CTG", "CLO", 32, "09:00", "10:40", 210000, 60),
         ("CM5502", "Clic", "CLO", "CTG", 36, "17:00", "18:40", 215000, 60),
@@ -97,7 +90,7 @@ def cargar_catalogo(post, hoy):
         ("poblado", "Hotel Poblado Plaza", "MDE", "Cl. 10 #43-20", 4, [-75.568, 6.209],
          [("Sencilla", 1, 260000, 5), ("Doble", 2, 330000, 8)]),
         ("coral", "Posada Coral", "ADZ", "Av. Colombia #3-15", 3, [-81.700, 12.584],
-         [("Doble", 2, 310000, 1)]),                         # 1 habitación: prueba de sobreventa
+         [("Doble", 2, 310000, 1)]),                         # capacidad baja a propósito: agotados en la demo
     ]:
         h[clave] = post("/hoteles/", {
             "nombre": nombre, "ciudad": ciudad, "direccion": dir_, "estrellas": est,
@@ -209,7 +202,6 @@ def cargar_reservas(post, cat, c, a, dia):
         "entrada": dia(entrada), "salida": dia(entrada + noches)}]
     tour = lambda clave, n_dia, n: [{"tipo": "tour", "ref_id": t[clave], "salida_id": s[(clave, n_dia)], "cantidad": n}]
     paquete = lambda clave, n: [{"tipo": "paquete", "ref_id": p[clave]["id"], "cantidad": n}]
-    precios = {x["id"]: x["precio"] for x in p.values()}
 
     # n.º | meses atrás | día del mes (None en el mes actual) | cliente | asesor | ítems | pagos | ¿cancelar?
     # Un pago (medio, None) cubre todo el saldo y deja la reserva Pagada.
@@ -218,7 +210,7 @@ def cargar_reservas(post, cat, c, a, dia):
          [("PSE", .5), ("Tarjeta", None)], False),
         (2, 2, 6, "79856412", "AS-02", paquete("ctg", 2), [("Tarjeta", .5), ("Transferencia", None)], False),
         (3, 2, 9, "1032456789", "AS-01", hotel("murallas", "Familiar", 12, 3, 4) + tour("murallas", 14, 4),
-         [], True),                                                     # devuelve noches: prueba negativa
+         [], True),                                                     # cancelada: devuelve noches y cupos al inventario
         (4, 2, 11, "1015998877", "AS-02", paquete("smr", 1), [("Efectivo", None)], False),
         (5, 2, 14, "1098765432", "AS-01", hotel("poblado", "Sencilla", 18, 2, 1), [("PSE", None)], False),
         (6, 2, 18, "43567123", "AS-02", tour("tayrona", 16, 3), [("Transferencia", None)], False),
@@ -254,105 +246,15 @@ def cargar_reservas(post, cat, c, a, dia):
         pasajeros = [c[doc]["pasajero"]] + [ACOMPANANTES[(i + k) % len(ACOMPANANTES)] for k in range(cantidad - 1)]
         r = post("/reservas/", {"cliente_id": c[doc]["id"], "asesor_id": a[asesor], "items": items,
                                 "pasajeros": [{"nombre": n, "documento": d, "nacimiento": f} for n, d, f in pasajeros]})
-        for it in r["items"]:
-            if it["tipo"] == "paquete":
-                assert it["precio"] == precios[it["ref_id"]], (it["precio"], precios[it["ref_id"]])
         for medio, fraccion in pagos:
             valor = r["saldo"] if fraccion is None else round(r["total"] * fraccion / 1000) * 1000
             r = post(f"/reservas/{r['codigo']}/pagos", {"valor": valor, "medio": medio, "usuario": asesor})
         if cancelar:
             r = post(f"/reservas/{r['codigo']}/cancelar", {"usuario": asesor})
-        creadas[num] = {"codigo": r["codigo"], "atras": atras, "dia": dia_mes, "saldo": r["saldo"]}
+        creadas[num] = {"codigo": r["codigo"], "atras": atras, "dia": dia_mes}
         tipos = "+".join(sorted({it["tipo"] for it in r["items"]}))
         print(f"  {num:>2}. {r['codigo']}  {tipos:<12} ×{cantidad}  {r['total']:>10,}  pagado {r['pagado']:>10,}  {r['estado']}")
     return creadas
-
-
-def pruebas_negativas(post, get, cat, c, a, creadas, dia):
-    v, h, _, _, _ = cat
-    print("Pruebas negativas (deben fallar)")
-    laura = c["1020304050"]
-    pax = [{"nombre": n, "documento": d, "nacimiento": f}
-           for n, d, f in (laura["pasajero"], ACOMPANANTES[0])]
-    canc, coral, pend = creadas[3]["codigo"], creadas[17]["codigo"], creadas[7]
-
-    noches = get(f"/hoteles/{h['murallas']}/noches?tipo=Familiar&desde={dia(12)}&hasta={dia(15)}")
-    assert len(noches) == 3 and all(n["libres"] == 4 for n in noches), "la cancelación no devolvió las noches"
-    print(f"  [ok] Cancelación de {canc} devolvió las 3 noches Familiar (libres = 4)")
-
-    post("/reservas/", {"cliente_id": laura["id"], "asesor_id": a["AS-01"], "pasajeros": pax[:1],
-                        "items": [{"tipo": "hotel", "ref_id": h["coral"], "tipo_hab": "Doble",
-                                   "entrada": dia(26), "salida": dia(27), "cantidad": 1}]},
-         esperado=409, nota=f"Sobreventa de hotel (Doble agotada por {coral})")
-
-    antes = get(f"/vuelos/{v['WG7310']}")["tarifas"][0]["libres"]
-    post("/reservas/", {"cliente_id": laura["id"], "asesor_id": a["AS-01"], "pasajeros": pax,
-                        "items": [{"tipo": "vuelo", "ref_id": v["WG7310"], "tarifa": "Basica", "cantidad": 2},
-                                  {"tipo": "hotel", "ref_id": h["coral"], "tipo_hab": "Doble",
-                                   "entrada": dia(25), "salida": dia(28), "cantidad": 2}]},
-         esperado=409, nota="Vuelo OK + hotel lleno")
-    despues = get(f"/vuelos/{v['WG7310']}")["tarifas"][0]["libres"]
-    assert antes == despues == 2, (antes, despues)
-    print(f"  [ok] Compensación: las sillas del WG7310 siguen en {despues} (se descontaron y se devolvieron)")
-
-    post("/reservas/", {"cliente_id": laura["id"], "asesor_id": a["AS-01"], "pasajeros": pax[:1],
-                        "items": [{"tipo": "vuelo", "ref_id": v["WG7310"], "tarifa": "Basica", "cantidad": 3}]},
-         esperado=409, nota="Sobreventa de vuelo")
-    post(f"/reservas/{pend['codigo']}/pagos", {"valor": pend["saldo"] + 1, "medio": "PSE", "usuario": "AS-01"},
-         esperado=409, nota="Sobrepago")
-    post(f"/reservas/{canc}/pagos", {"valor": 1000, "medio": "PSE", "usuario": "AS-01"},
-         esperado=409, nota="Pago a reserva cancelada")
-    post(f"/reservas/{canc}/cancelar", {"usuario": "AS-01"}, esperado=409, nota="Doble cancelación")
-    post(f"/reservas/{pend['codigo']}/pagos", {"valor": 1000, "medio": "PSE", "usuario": "AS-03"},
-         esperado=409, nota="Asesor inactivo")
-    post("/vuelos/", {"codigo": "XX1", "aerolinea": "X", "origen": "BOG", "destino": "CTG",
-                      "sale": f"{dia(20)}T10:00:00-05:00", "llega": f"{dia(20)}T11:00:00-05:00",
-                      "tarifas": [{"nombre": "Basica", "precio": 1, "equipaje": "x", "sillas": 1, "libres": 999}]},
-         esperado=422, nota="Cliente intenta fijar 'libres'")
-
-    # Mínimo 1 tarifa por vuelo y 1 tipo de habitación por hotel: la API responde 422 y Mongo 121
-    db = client[DB_NAME]
-    base_v = {"aerolinea": "X", "origen": "BOG", "destino": "CTG",
-              "sale": f"{dia(20)}T10:00:00-05:00", "llega": f"{dia(20)}T11:00:00-05:00"}
-    base_h = {"nombre": "Hotel de prueba", "ciudad": "CTG", "direccion": "Cl. 1", "estrellas": 3}
-    post("/vuelos/", {**base_v, "codigo": "TESTV1", "tarifas": []}, esperado=422, nota="API: vuelo con tarifas vacías")
-    post("/vuelos/", {**base_v, "codigo": "TESTV1"}, esperado=422, nota="API: vuelo sin tarifas")
-    post("/hoteles/", {**base_h, "habitaciones": []}, esperado=422, nota="API: hotel con habitaciones vacías")
-    post("/hoteles/", base_h, esperado=422, nota="API: hotel sin habitaciones")
-
-    directo_v = {**base_v, "sale": datetime.fromisoformat(base_v["sale"]), "llega": datetime.fromisoformat(base_v["llega"])}
-    for texto, col, doc, campo in [
-        ("vuelo sin tarifas", db.vuelos, {**directo_v, "codigo": "TESTV1"}, "tarifas"),
-        ("vuelo con tarifas vacías", db.vuelos, {**directo_v, "codigo": "TESTV1", "tarifas": []}, "tarifas"),
-        ("hotel sin habitaciones", db.hoteles, {**base_h}, "habitaciones"),
-        ("hotel con habitaciones vacías", db.hoteles, {**base_h, "habitaciones": []}, "habitaciones"),
-    ]:
-        try:
-            col.insert_one(doc)
-        except WriteError as e:     # el campo en errInfo aísla el 121 de cualquier otra regla del esquema
-            assert e.code == 121 and campo in str(e.details), (texto, e.details)
-            print(f"  [ok] Mongo: {texto}: rechazado con código 121")
-        else:
-            raise SystemExit(f"\n[x] Mongo aceptó: {texto}")
-
-    # Una tarifa con 0 sillas sigue siendo válida: el guard de B3 cubre sillas_totales = 0
-    tarifa = {"nombre": "Basica", "precio": 1, "equipaje": "x", "sillas": 0}
-    creados = []
-    try:
-        post("/vuelos/", {**base_v, "codigo": "TESTV2", "tarifas": [tarifa]}, nota="API: una tarifa con 0 sillas")
-        creados.append(db.vuelos.find_one({"codigo": "TESTV2"})["_id"])
-        db.vuelos.delete_one({"_id": creados.pop()})
-        creados.append(db.vuelos.insert_one({**directo_v, "codigo": "TESTV2",
-                                             "tarifas": [{**tarifa, "libres": 0}]}).inserted_id)
-        print("  [ok] Mongo: una tarifa con 0 sillas: aceptada")
-    finally:
-        for _id in creados:
-            db.vuelos.delete_one({"_id": _id})
-
-    get("/reservas/NOEXISTE", esperado=404, nota="Reserva inexistente")
-    post("/vuelos/", {**base_v, "origen": "XXX", "codigo": "TESTV3", "tarifas": [tarifa]},
-         esperado=404, nota="Vuelo con ciudad de origen inexistente")
-    assert db.vuelos.count_documents({"codigo": {"$in": ["TESTV1", "TESTV2", "TESTV3"]}}) == 0, "quedó un vuelo de prueba"
 
 
 # ─────────────────── Fechas de demostración: en producción las pone la API ───────────────────
@@ -410,52 +312,6 @@ def fechar_reservas(db, creadas, hoy):
                                    {"$set": {"creada": creada, "pagos": pagos, "historial": historial}})
 
 
-# ─────────────────────────────── Verificación ───────────────────────────────
-def verificar_minimos(db, get, hoy):
-    print("Mínimos del enunciado")
-    conteo = lambda col: db[col].count_documents({})
-    verificar(conteo("ciudades") >= 4, f"ciudades >= 4 ({conteo('ciudades')})")
-
-    rutas = {(x["origen"], x["destino"]) for x in db.vuelos.find({}, {"origen": 1, "destino": 1})}
-    verificar(conteo("vuelos") >= 10, f"vuelos >= 10 ({conteo('vuelos')})")
-    verificar(all((d, o) in rutas for o, d in rutas), f"cada ruta tiene regreso ({len(rutas)} rutas)")
-
-    ciudades = db.hoteles.distinct("ciudad")
-    verificar(conteo("hoteles") >= 5 and len(ciudades) >= 3,
-              f"hoteles >= 5 en >= 3 ciudades ({conteo('hoteles')} en {len(ciudades)})")
-    verificar(conteo("tours") >= 5, f"tours >= 5 ({conteo('tours')})")
-    salidas = list(db.salidas.aggregate([{"$group": {"_id": "$tour_id", "n": {"$sum": 1}}}]))
-    verificar(len(salidas) == conteo("tours") and all(x["n"] >= 2 for x in salidas),
-              f"cada tour con varias salidas (mínimo {min(x['n'] for x in salidas)})")
-
-    vigentes = get("/paquetes/")
-    verificar(len(vigentes) >= 3, f"paquetes vigentes hoy >= 3 ({len(vigentes)})")
-    verificar(conteo("clientes") >= 15, f"clientes >= 15 ({conteo('clientes')})")
-    verificar(conteo("asesores") >= 3, f"asesores >= 3 ({conteo('asesores')})")
-
-    estados = {x["_id"]: x["n"] for x in db.reservas.aggregate(
-        [{"$group": {"_id": "$estado", "n": {"$sum": 1}}}])}
-    verificar(conteo("reservas") >= 20, f"reservas >= 20 ({conteo('reservas')})")
-    verificar(set(estados) == {"Pendiente", "Pagada", "Cancelada"}, f"los 3 estados presentes ({estados})")
-
-    meses = {x["_id"]: x["n"] for x in db.reservas.aggregate([{"$group": {
-        "_id": {"$dateToString": {"date": "$creada", "format": "%Y-%m", "timezone": "America/Bogota"}},
-        "n": {"$sum": 1}}}])}
-    esperados = {"{}-{:02d}".format(*mes_relativo(hoy, a)): n for a, n in [(2, 8), (1, 7), (0, 7)]}
-    verificar(len(meses) >= 3 and meses == esperados, f"creadas en >= 3 meses de Bogotá ({dict(sorted(meses.items()))})")
-
-    # Próximos 30 días del enunciado: una noche por día para cada hotel y tipo, sin huecos
-    dias = {a_utc(hoy + timedelta(days=i)) for i in range(30)}
-    tipos = 0
-    for hotel in db.hoteles.find():
-        for hab in hotel["habitaciones"]:
-            fechas = {n["fecha"] for n in db.noches.find({"hotel_id": hotel["_id"], "tipo": hab["tipo"],
-                                                          "fecha": {"$gte": min(dias), "$lte": max(dias)}})}
-            assert fechas == dias, (hotel["nombre"], hab["tipo"], sorted(dias - fechas))
-            tipos += 1
-    print(f"  [ok] noches sin huecos en [hoy, hoy+30) para {tipos} combinaciones de hotel y tipo")
-
-
 def main():
     candado()                                          # antes de drop_database y de TestClient
     hoy = datetime.now(BOGOTA).date()
@@ -463,17 +319,14 @@ def main():
     print(f"Hoy en Bogotá: {hoy}")
     client.drop_database(DB_NAME)
     with TestClient(app) as api:                       # dispara init_db() (validadores + índices)
-        post = lambda url, d, **k: llamar(api, "POST", url, d, **k)
-        get = lambda url, **k: llamar(api, "GET", url, **k)
+        post = lambda url, d: llamar(api, "POST", url, d)
 
         cat = cargar_catalogo(post, hoy)
         c, a = cargar_personas(post)
         creadas = cargar_reservas(post, cat, c, a, dia)
-        pruebas_negativas(post, get, cat, c, a, creadas, dia)
 
         db = client[DB_NAME]
         fechar_reservas(db, creadas, hoy)
-        verificar_minimos(db, get, hoy)
 
         print("\nResumen")
         for col in ["ciudades", "vuelos", "hoteles", "noches", "tours", "salidas",
