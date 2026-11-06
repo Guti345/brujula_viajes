@@ -41,6 +41,20 @@ CSS = f"""
     box-shadow: 0 2px 10px rgba(10, 37, 64, 0.06);
 }}
 
+/* Resumen de la reserva en curso (Buscar y reservar): queda pegado arriba al bajar y, si crece más
+   que la pantalla, tiene su propio scroll. Si sticky no opera, el panel se ve igual que antes.
+   El contenedor usa height="stretch" para que su envoltorio ocupe el alto de la columna (ese es el
+   recorrido del sticky); flex: 0 0 auto evita que el panel mismo crezca y mida solo su contenido.
+   max-height descuenta el top (4rem), el relleno inferior de la página (10rem) y 1rem de aire, para
+   que al final de la página el panel quepa completo sin que lo empuje hacia arriba. */
+.st-key-resumen_panel {{
+    flex: 0 0 auto;
+    position: sticky;
+    top: 4rem;
+    max-height: calc(100vh - 15rem);
+    overflow-y: auto;
+}}
+
 /* Botones de Streamlit */
 .stButton button, .stFormSubmitButton button {{
     border-radius: 12px;

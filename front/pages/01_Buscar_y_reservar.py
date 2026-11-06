@@ -117,14 +117,15 @@ def panel_exito(res: dict):
 # ─────────────────────────────── 1. Catálogo y reserva en curso ───────────────────────────────
 ciudades = leer("/ciudades/") or []
 nombres = {c["iata"]: c["nombre"] for c in ciudades}
-filtro, _ = st.columns([1, 2])
+# Una sola fila: a la izquierda todo el flujo (catálogo, cliente, pasajeros) y a la derecha el
+# resumen de la reserva en curso, que queda pegado arriba mientras se baja (ver estilo.py).
+flujo, resumen = st.columns([7, 3], gap="large")
+filtro, _ = flujo.columns([1, 2])
 destino = filtro.selectbox("Ciudad destino", ["Todas", *nombres], key="f_destino",
                            format_func=lambda x: "Todas las ciudades" if x == "Todas" else f"{nombres[x]} ({x})")
 destino = None if destino == "Todas" else destino
 
-catalogo, carrito = st.columns([7, 3], gap="large")
-
-with catalogo:
+with flujo:
     t_vuelos, t_hoteles, t_tours, t_paquetes = st.tabs(
         [":material/flight: Vuelos", ":material/hotel: Hoteles", ":material/hiking: Tours",
          ":material/luggage: Paquetes"])
@@ -276,7 +277,8 @@ with catalogo:
                     agregar({"tipo": "paquete", "ref_id": p["id"], "cantidad": n},
                             f"Paquete {p['nombre']} · {n} persona(s)", n * precio)
 
-with carrito, st.container(border=True, key="tarjeta_reserva"):
+# height="stretch": el envoltorio del panel ocupa el alto de la columna, así el sticky tiene recorrido
+with resumen, st.container(key="resumen_panel", height="stretch"), st.container(border=True, key="tarjeta_reserva"):
     st.markdown("#### :primary[:material/shopping_bag:] Reserva en curso")
     reserva = st.session_state.reserva
     if not reserva:
@@ -291,98 +293,100 @@ with carrito, st.container(border=True, key="tarjeta_reserva"):
         st.markdown(f"**Total estimado: {pesos(sum(x['estimado'] for x in reserva), markdown=True)}**")
         st.caption("Estimado con los precios del catálogo. El total real lo calcula el sistema al registrar.")
 
-# ─────────────────────────────── 2. Cliente ───────────────────────────────
-st.header("Cliente")
-cliente = st.session_state.cliente
-if cliente:
-    with st.container(border=True, key="tarjeta_cliente"):
-        datos, cambiar = st.columns([5, 1], vertical_alignment="center")
-        datos.markdown(f":primary[:material/person:] **{cliente['nombre']}** · Documento {cliente['documento']}  \n"
-                       f"{cliente['correo']} · {cliente['telefono']}")
-        if cambiar.button("Cambiar cliente"):
-            st.session_state.cliente = None
-            st.rerun()
-else:
-    buscar, nuevo = st.columns(2, gap="large")
-    with buscar:
-        texto = st.text_input("Buscar por documento o nombre", key="busqueda_cliente",
-                              placeholder="Ej.: 1020 o Laura")
-        if texto.strip():
-            q = texto.strip().lower()
-            coincidencias = [c for c in leer("/clientes/") or []
-                             if q in c["documento"].lower() or q in c["nombre"].lower()]
-            if coincidencias:
-                elegido = st.selectbox(f"Coincidencias ({len(coincidencias)})", coincidencias, key="cliente_elegido",
-                                       format_func=lambda c: f"{c['nombre']} · {c['documento']}")
-                if st.button("Seleccionar cliente", type="primary"):
-                    st.session_state.cliente = elegido
-                    st.rerun()
-            else:
-                st.info("No hay clientes con ese documento o nombre. Puedes registrarlo como cliente nuevo.")
-    with nuevo, st.expander("Registrar cliente nuevo", icon=":material/person_add:"):
-        with st.form("cliente_nuevo"):
-            documento = st.text_input("Documento")
-            nombre = st.text_input("Nombre completo")
-            correo = st.text_input("Correo")
-            telefono = st.text_input("Teléfono")
-            if st.form_submit_button("Registrar cliente", type="primary"):
-                try:
-                    nuevo_cliente = schemas.ClienteCreate(documento=documento, nombre=nombre,
-                                                          correo=correo, telefono=telefono)
-                except ValidationError as e:
-                    st.warning(aviso_validacion(e))
+with flujo:
+    # ─────────────────────────────── 2. Cliente ───────────────────────────────
+    st.header("Cliente")
+    cliente = st.session_state.cliente
+    if cliente:
+        with st.container(border=True, key="tarjeta_cliente"):
+            datos, cambiar = st.columns([2, 1], vertical_alignment="center")
+            datos.markdown(f":primary[:material/person:] **{cliente['nombre']}** · Documento {cliente['documento']}  \n"
+                           f"{cliente['correo']} · {cliente['telefono']}")
+            if cambiar.button("Cambiar cliente"):
+                st.session_state.cliente = None
+                st.rerun()
+    else:
+        buscar, nuevo = st.columns(2, gap="large")
+        with buscar:
+            texto = st.text_input("Buscar por documento o nombre", key="busqueda_cliente",
+                                  placeholder="Ej.: 1020 o Laura")
+            if texto.strip():
+                q = texto.strip().lower()
+                coincidencias = [c for c in leer("/clientes/") or []
+                                 if q in c["documento"].lower() or q in c["nombre"].lower()]
+                if coincidencias:
+                    elegido = st.selectbox(f"Coincidencias ({len(coincidencias)})", coincidencias, key="cliente_elegido",
+                                           format_func=lambda c: f"{c['nombre']} · {c['documento']}")
+                    if st.button("Seleccionar cliente", type="primary"):
+                        st.session_state.cliente = elegido
+                        st.rerun()
                 else:
-                    r = api_client.post("/clientes/", nuevo_cliente.model_dump(mode="json"))
+                    st.info("No hay clientes con ese documento o nombre. Puedes registrarlo como cliente nuevo.")
+        with nuevo, st.expander("Registrar cliente nuevo", icon=":material/person_add:"):
+            with st.form("cliente_nuevo"):
+                documento = st.text_input("Documento")
+                nombre = st.text_input("Nombre completo")
+                correo = st.text_input("Correo")
+                telefono = st.text_input("Teléfono")
+                if st.form_submit_button("Registrar cliente", type="primary"):
+                    try:
+                        nuevo_cliente = schemas.ClienteCreate(documento=documento, nombre=nombre,
+                                                              correo=correo, telefono=telefono)
+                    except ValidationError as e:
+                        st.warning(aviso_validacion(e))
+                    else:
+                        r = api_client.post("/clientes/", nuevo_cliente.model_dump(mode="json"))
+                        if r.status_code == 201:
+                            st.session_state.cliente = r.json()     # queda seleccionado
+                            leer.clear()
+                            st.rerun()
+                        st.error(f"No se pudo registrar el cliente: {api_client.detalle_error(r)}")
+
+    # ─────────────────────────────── 3. Pasajeros y registro ───────────────────────────────
+    st.header("Pasajeros y registro")
+    if "resultado" in st.session_state:
+        panel_exito(st.session_state.resultado)
+
+    if not st.session_state.reserva:
+        st.info("Agrega al menos un producto a la reserva en curso.")
+    elif not cliente:
+        st.info("Selecciona o registra el cliente de la reserva.")
+    else:
+        st.markdown(f"Registrando como: **{asesor['nombre']}** · Cliente: **{cliente['nombre']}**")
+        cantidad = st.number_input("Número de pasajeros", 1, 20, key="n_pasajeros")
+        with st.form("confirmar"):
+            for i in range(cantidad):
+                # Columna angosta (el resumen va a la derecha): nombre en su fila; documento y fecha debajo
+                st.text_input(f"Pasajero {i + 1}: nombre completo", key=f"pas_nombre_{i}")
+                doc_col, nac_col = st.columns(2)
+                doc_col.text_input("Documento", key=f"pas_documento_{i}")
+                nac_col.date_input("Fecha de nacimiento", value=None, min_value=date(1920, 1, 1), max_value=HOY,
+                                   format="DD/MM/YYYY", key=f"pas_nacimiento_{i}")
+            enviar = st.form_submit_button("Registrar reserva", type="primary", icon=":material/check:")
+
+        if enviar:
+            estado = st.session_state
+            try:
+                nueva = schemas.ReservaCreate(
+                    cliente_id=cliente["id"], asesor_id=asesor["id"],
+                    items=[x["item"] for x in estado.reserva],
+                    pasajeros=[{"nombre": estado[f"pas_nombre_{i}"], "documento": estado[f"pas_documento_{i}"],
+                                "nacimiento": estado[f"pas_nacimiento_{i}"]} for i in range(cantidad)])
+            except ValidationError as e:
+                st.warning(aviso_validacion(e))
+            else:
+                try:
+                    r = api_client.post("/reservas/", nueva.model_dump(mode="json"))
+                except requests.RequestException:
+                    st.error("No hay conexión con la API. La reserva en curso se conserva; inténtalo de nuevo.")
+                else:
                     if r.status_code == 201:
-                        st.session_state.cliente = r.json()     # queda seleccionado
+                        # Lista: la reserva en curso, el cliente y los pasajeros se limpian para la siguiente
+                        estado.resultado = r.json()
+                        estado.reserva, estado.cliente = [], None
+                        for clave in [k for k in estado if str(k).startswith(("pas_", "n_pasajeros", "busqueda_cliente"))]:
+                            del estado[clave]
                         leer.clear()
                         st.rerun()
-                    st.error(f"No se pudo registrar el cliente: {api_client.detalle_error(r)}")
-
-# ─────────────────────────────── 3. Pasajeros y registro ───────────────────────────────
-st.header("Pasajeros y registro")
-if "resultado" in st.session_state:
-    panel_exito(st.session_state.resultado)
-
-if not st.session_state.reserva:
-    st.info("Agrega al menos un producto a la reserva en curso.")
-elif not cliente:
-    st.info("Selecciona o registra el cliente de la reserva.")
-else:
-    st.markdown(f"Registrando como: **{asesor['nombre']}** · Cliente: **{cliente['nombre']}**")
-    cantidad = st.number_input("Número de pasajeros", 1, 20, key="n_pasajeros")
-    with st.form("confirmar"):
-        for i in range(cantidad):
-            nombre_col, doc_col, nac_col = st.columns([3, 2, 2])
-            nombre_col.text_input(f"Pasajero {i + 1}: nombre completo", key=f"pas_nombre_{i}")
-            doc_col.text_input("Documento", key=f"pas_documento_{i}")
-            nac_col.date_input("Fecha de nacimiento", value=None, min_value=date(1920, 1, 1), max_value=HOY,
-                               format="DD/MM/YYYY", key=f"pas_nacimiento_{i}")
-        enviar = st.form_submit_button("Registrar reserva", type="primary", icon=":material/check:")
-
-    if enviar:
-        estado = st.session_state
-        try:
-            nueva = schemas.ReservaCreate(
-                cliente_id=cliente["id"], asesor_id=asesor["id"],
-                items=[x["item"] for x in estado.reserva],
-                pasajeros=[{"nombre": estado[f"pas_nombre_{i}"], "documento": estado[f"pas_documento_{i}"],
-                            "nacimiento": estado[f"pas_nacimiento_{i}"]} for i in range(cantidad)])
-        except ValidationError as e:
-            st.warning(aviso_validacion(e))
-        else:
-            try:
-                r = api_client.post("/reservas/", nueva.model_dump(mode="json"))
-            except requests.RequestException:
-                st.error("No hay conexión con la API. La reserva en curso se conserva; inténtalo de nuevo.")
-            else:
-                if r.status_code == 201:
-                    # Lista: la reserva en curso, el cliente y los pasajeros se limpian para la siguiente
-                    estado.resultado = r.json()
-                    estado.reserva, estado.cliente = [], None
-                    for clave in [k for k in estado if str(k).startswith(("pas_", "n_pasajeros", "busqueda_cliente"))]:
-                        del estado[clave]
-                    leer.clear()
-                    st.rerun()
-                st.error(f"No se pudo registrar la reserva: {api_client.detalle_error(r)} "
-                         "La reserva en curso se conserva para que la ajustes.", icon=":material/error:")
+                    st.error(f"No se pudo registrar la reserva: {api_client.detalle_error(r)} "
+                             "La reserva en curso se conserva para que la ajustes.", icon=":material/error:")
