@@ -82,9 +82,20 @@ def aplicar_estilo():
             if st.button("Salir", icon=":material/logout:"):
                 # Todo lo de la sesión es estado de operación (asesor, reserva en curso, cliente,
                 # pasajeros, avisos y claves de widgets): se borra completo para que el siguiente
-                # asesor empiece de cero.
+                # asesor empiece de cero. Luego vuelve al Inicio público.
                 st.session_state.clear()
-                st.rerun()
+                st.switch_page(INICIO)
+
+
+def requerir_asesor() -> dict:
+    """Puerta de los módulos: sin asesor en sesión no se renderiza nada más de la página. Es un
+    control de la interfaz para la demostración académica; la API sigue abierta."""
+    asesor = st.session_state.get("asesor")
+    if not asesor:
+        st.info("Esta sección es para el equipo de asesores. Ingresa desde el Inicio.", icon=":material/badge:")
+        st.page_link(INICIO, label="Ir al Inicio", icon=":material/login:")
+        st.stop()
+    return asesor
 
 
 def pesos(valor, markdown: bool = False) -> str:

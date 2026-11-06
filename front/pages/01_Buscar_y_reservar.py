@@ -9,7 +9,7 @@ import streamlit as st
 from pydantic import ValidationError
 
 import api_client
-from estilo import INICIO, RESERVAS, aplicar_estilo, encabezado_modulo, hora_bogota, pesos
+from estilo import RESERVAS, aplicar_estilo, encabezado_modulo, hora_bogota, pesos, requerir_asesor
 
 # Mismos DTO del backend para pre-validar antes de tocar la red
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -18,6 +18,7 @@ from back.app import schemas  # noqa: E402
 st.set_page_config(page_title="Buscar y reservar · Brújula Viajes", page_icon="assets/logo_isotipo.png",
                    layout="wide")
 aplicar_estilo()
+asesor = requerir_asesor()
 encabezado_modulo("Buscar y reservar",
                   "Consulta el catálogo con disponibilidad real y registra la reserva del cliente.")
 
@@ -28,7 +29,6 @@ if not api_client.api_en_linea():
 
 st.session_state.setdefault("reserva", [])        # reserva en curso: lista de ítems
 st.session_state.setdefault("cliente", None)
-asesor = st.session_state.get("asesor")
 
 TARIFAS = {"Basica": "Básica", "Clasica": "Clásica", "Flexible": "Flexible"}
 TIPOS_HAB = ["Sencilla", "Doble", "Familiar", "Suite"]
@@ -198,7 +198,9 @@ with catalogo:
                 if disp is None:
                     accion.warning("No se pudo consultar la disponibilidad.")
                 elif not disp["disponible"]:
-                    accion.badge("Sin disponibilidad en esas fechas", icon=":material/event_busy:", color="orange")
+                    noches = ", ".join(fecha_dia(f) for f in disp.get("faltan", []))
+                    accion.warning(f"Sin disponibilidad: no hay cupo la(s) noche(s) del {noches}." if noches
+                                   else "Sin disponibilidad en esas fechas.", icon=":material/event_busy:")
                 else:
                     accion.badge(f"Disponible · {disp['habitaciones']} hab. · {disp['noches']} noche(s)",
                                  icon=":material/event_available:", color="green")
@@ -269,7 +271,7 @@ with catalogo:
                     continue
                 n = accion.number_input("Personas", 1, min(cupo, 20), key=f"personas_{p['id']}")
                 if any(c["tipo"] == "hotel" for c in p["componentes"]):
-                    accion.caption("El hotel del paquete se confirma al registrar.")
+                    accion.caption("Disponibilidad final del paquete sujeta a validación al registrar.")
                 if accion.button("Agregar", icon=":material/add:", key=f"agregar_{p['id']}"):
                     agregar({"tipo": "paquete", "ref_id": p["id"], "cantidad": n},
                             f"Paquete {p['nombre']} · {n} persona(s)", n * precio)
@@ -342,10 +344,7 @@ st.header("Pasajeros y registro")
 if "resultado" in st.session_state:
     panel_exito(st.session_state.resultado)
 
-if not asesor:
-    st.warning("Para registrar reservas primero identifícate como asesor.", icon=":material/badge:")
-    st.page_link(INICIO, label="Ir al Inicio para identificarte", icon=":material/login:")
-elif not st.session_state.reserva:
+if not st.session_state.reserva:
     st.info("Agrega al menos un producto a la reserva en curso.")
 elif not cliente:
     st.info("Selecciona o registra el cliente de la reserva.")
