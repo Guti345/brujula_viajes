@@ -1,0 +1,25 @@
+# Tema de marca de Brújula Viajes. Los mismos HEX están como constantes en estilo.py.
+
+[client]
+# El menú lateral lo arma estilo.py con nombres en español (Inicio, Catálogo y clientes...).
+showSidebarNavigation = false
+# Oculta las opciones de desarrollador (Deploy, Rerun) de la barra superior.
+toolbarMode = "viewer"
+
+[theme]
+base = "light"
+primaryColor = "#00A896"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F1DE"
+textColor = "#0A2540"
+linkColor = "#00A896"
+baseRadius = "large"
+# Nunito Sans desde Google Fonts; si no carga, sans-serif.
+font = "Nunito Sans:https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap, sans-serif"
+headingFontWeights = [800, 700, 700, 700, 700, 700]
+# st.info y los avisos "azules" toman el turquesa de la marca.
+blueColor = "#00A896"
+blueBackgroundColor = "#E5F6F4"
+blueTextColor = "#0A2540"
+chartCategoricalColors = ["#00A896", "#0A2540", "#FFD166", "#FF6B6B", "#5FC9BB", "#4A6680"]
+chartSequentialColors = ["#E6F6F4", "#C2EBE5", "#9DDFD6", "#78D3C7", "#53C7B8", "#2EBBA9", "#00A896", "#008F80", "#006E63", "#0A2540"]
