@@ -1,5 +1,6 @@
 """front/api_client.py — Único puente entre Streamlit y la API (Streamlit nunca habla con Mongo)."""
 import os
+from urllib.parse import quote
 
 import requests
 
@@ -45,3 +46,34 @@ def buscar_asesor(correo: str, codigo: str) -> dict | None:
         if a["correo"].lower() == correo and a["codigo"] == codigo and a.get("activo", True):
             return {"id": a["id"], "nombre": a["nombre"]}
     return None
+
+
+def codigo_asesor_actual(asesor_id: str) -> str | None:
+    """Pagos y cancelaciones piden el código del asesor (campo usuario). Se lee de la API justo antes de
+    usarlo: devuelve el código solo si ese asesor existe y sigue activo. No se guarda ni se muestra."""
+    for a in get("/asesores/").json():
+        if a["id"] == asesor_id:
+            return a["codigo"] if a.get("activo", True) else None
+    return None
+
+
+def mapa_asesores() -> dict:
+    """{código: nombre} para mostrar el historial de una reserva con nombres en vez de códigos."""
+    return {a["codigo"]: a["nombre"] for a in get("/asesores/").json()}
+
+
+def listar_reservas(estado: str | None = None, documento: str | None = None, limite: int = 50):
+    params = {"estado": estado, "cliente": documento, "limite": limite}
+    return get("/reservas/", **{k: v for k, v in params.items() if v is not None})
+
+
+def obtener_reserva(codigo: str):
+    return get(f"/reservas/{quote(codigo, safe='')}")   # el código lo digita el asesor
+
+
+def registrar_pago(codigo: str, valor: int, medio: str, usuario: str):
+    return post(f"/reservas/{quote(codigo, safe='')}/pagos", {"valor": valor, "medio": medio, "usuario": usuario})
+
+
+def cancelar_reserva(codigo: str, usuario: str):
+    return post(f"/reservas/{quote(codigo, safe='')}/cancelar", {"usuario": usuario})
