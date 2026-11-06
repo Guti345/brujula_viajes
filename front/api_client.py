@@ -77,3 +77,61 @@ def registrar_pago(codigo: str, valor: int, medio: str, usuario: str):
 
 def cancelar_reserva(codigo: str, usuario: str):
     return post(f"/reservas/{quote(codigo, safe='')}/cancelar", {"usuario": usuario})
+
+
+# ─────────────── Catálogo y clientes: listados (GET) y registros (POST) ───────────────
+# Los registros reciben el cuerpo ya validado con el DTO del backend (model_dump(mode="json")).
+def listar_ciudades():
+    return get("/ciudades/")
+
+
+def listar_vuelos(limite: int = 200):
+    return get("/vuelos/", limite=limite)
+
+
+def listar_hoteles():
+    return get("/hoteles/")
+
+
+def listar_tours():
+    return get("/tours/")
+
+
+def listar_salidas(tour_id: str, solo_futuras: bool = True):
+    return get(f"/tours/{tour_id}/salidas", solo_futuras=str(solo_futuras).lower())
+
+
+def listar_paquetes(solo_vigentes: bool = True):
+    return get("/paquetes/", solo_vigentes=str(solo_vigentes).lower())
+
+
+def listar_clientes():
+    return get("/clientes/")
+
+
+def crear_vuelo(datos: dict):
+    return post("/vuelos/", datos)
+
+
+def crear_hotel(datos: dict):
+    return post("/hoteles/", datos)
+
+
+def generar_noches(hotel_id: str, datos: dict):
+    return post(f"/hoteles/{hotel_id}/noches", datos)
+
+
+def crear_tour(datos: dict):
+    return post("/tours/", datos)
+
+
+def crear_salida(tour_id: str, datos: dict):
+    return post(f"/tours/{tour_id}/salidas", datos)
+
+
+def crear_paquete(datos: dict):
+    return post("/paquetes/", datos)
+
+
+def crear_cliente(datos: dict):
+    return post("/clientes/", datos)
