@@ -135,3 +135,16 @@ def crear_paquete(datos: dict):
 
 def crear_cliente(datos: dict):
     return post("/clientes/", datos)
+
+
+# ─────────────── Reportes B1-B3 (GET; los calcula Mongo con pipelines de agregación) ───────────────
+def reporte_ventas_por_mes():
+    return get("/reportes/ventas-por-mes")
+
+
+def reporte_destinos_mas_vendidos():
+    return get("/reportes/destinos-mas-vendidos")
+
+
+def reporte_ocupacion_vuelos():
+    return get("/reportes/ocupacion-vuelos")
