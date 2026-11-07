@@ -41,6 +41,13 @@ CSS = f"""
     box-shadow: 0 2px 10px rgba(10, 37, 64, 0.06);
 }}
 
+/* Reportes: tablas de los paneles st.container(key="panel_rep_...") con letra y aire más amplios */
+[class*="st-key-panel_rep"] [data-testid="stTable"] th,
+[class*="st-key-panel_rep"] [data-testid="stTable"] td {{
+    font-size: 1rem;
+    padding: 0.6rem 0.9rem;
+}}
+
 /* Resumen de la reserva en curso (Buscar y reservar): queda pegado arriba al bajar y, si crece más
    que la pantalla, tiene su propio scroll. Si sticky no opera, el panel se ve igual que antes.
    El contenedor usa height="stretch" para que su envoltorio ocupe el alto de la columna (ese es el
