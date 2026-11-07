@@ -9,7 +9,8 @@ import streamlit as st
 from pydantic import ValidationError
 
 import api_client
-from estilo import RESERVAS, aplicar_estilo, encabezado_modulo, hora_bogota, pesos, requerir_asesor
+from estilo import (NOMBRES_TIPO, REGLAS_DOCUMENTO, RESERVAS, TIPOS_DOCUMENTO, aplicar_estilo, documento_cliente,
+                    encabezado_modulo, hora_bogota, pesos, requerir_asesor, tipo_doc)
 
 # Mismos DTO del backend para pre-validar antes de tocar la red
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -32,7 +33,7 @@ st.session_state.setdefault("cliente", None)
 
 TARIFAS = {"Basica": "Básica", "Clasica": "Clásica", "Flexible": "Flexible"}
 TIPOS_HAB = ["Sencilla", "Doble", "Familiar", "Suite"]
-CAMPOS = {"documento": "el documento", "nombre": "el nombre", "correo": "el correo",
+CAMPOS = {"documento": "el documento", "nombre": "el nombre o razón social", "correo": "el correo",
           "telefono": "el teléfono", "nacimiento": "la fecha de nacimiento"}
 HOY = date.today()
 
@@ -51,9 +52,9 @@ def leer(ruta: str, **params):
 def aviso_validacion(e: ValidationError) -> str:
     """Primer error de Pydantic en una línea en español, con el campo y el pasajero si aplica."""
     error = e.errors()[0]
-    loc = error["loc"]
-    campo = CAMPOS.get(str(loc[-1]), str(loc[-1]))
-    quien = f"Pasajero {loc[1] + 1}: " if loc[0] == "pasajeros" and len(loc) > 2 else ""
+    loc = error["loc"]          # vacío en las reglas de todo el modelo (documento según su tipo)
+    campo = CAMPOS.get(str(loc[-1]), str(loc[-1])) if loc else ""
+    quien = f"Pasajero {loc[1] + 1}: " if loc and loc[0] == "pasajeros" and len(loc) > 2 else ""
     tipo, ctx = error["type"], error.get("ctx", {})
     if tipo == "missing" or (tipo == "string_too_short" and ctx.get("min_length") == 1):
         detalle = f"falta {campo}"
@@ -68,6 +69,26 @@ def aviso_validacion(e: ValidationError) -> str:
     else:
         detalle = error["msg"].removeprefix("Value error, ")
     return f"Revisa los datos. {quien}{detalle[0].upper()}{detalle[1:]}."
+
+
+def buscar_exacto(numero: str, tipo: str | None) -> dict:
+    """Búsqueda exacta por tipo + número. {"cliente": ...} si lo encuentra; si no, el aviso o error que
+    se muestra. Sin tipo, un número que está en dos tipos da 409: la API no escoge uno al azar."""
+    if not numero:
+        return {"aviso": "Escribe el número de documento.", "icono": ":material/edit:"}
+    try:
+        r = api_client.buscar_cliente(numero, tipo)
+    except requests.RequestException:
+        return {"error": "No hay conexión con la API. Inténtalo de nuevo en un momento."}
+    if r.status_code == 200:
+        return {"cliente": r.json()}
+    if r.status_code == 404:
+        return {"aviso": f"No hay un cliente {tipo} con el número {numero}." if tipo else
+                f"No hay clientes con el número {numero}.", "icono": ":material/search_off:"}
+    if r.status_code == 409:
+        return {"aviso": f"{api_client.detalle_error(r)} Elige en «Tipo de documento» si es CC, CE, NIT o "
+                         "Pasaporte y busca de nuevo.", "icono": ":material/rule:"}
+    return {"error": f"No se pudo buscar el cliente: {api_client.detalle_error(r)}"}
 
 
 def agregar(item: dict, descripcion: str, estimado: int):
@@ -300,7 +321,7 @@ with flujo:
     if cliente:
         with st.container(border=True, key="tarjeta_cliente"):
             datos, cambiar = st.columns([2, 1], vertical_alignment="center")
-            datos.markdown(f":primary[:material/person:] **{cliente['nombre']}** · Documento {cliente['documento']}  \n"
+            datos.markdown(f":primary[:material/person:] **{cliente['nombre']}** · Documento {documento_cliente(cliente)}  \n"
                            f"{cliente['correo']} · {cliente['telefono']}")
             if cambiar.button("Cambiar cliente"):
                 st.session_state.cliente = None
@@ -316,31 +337,64 @@ with flujo:
                                  if q in c["documento"].lower() or q in c["nombre"].lower()]
                 if coincidencias:
                     elegido = st.selectbox(f"Coincidencias ({len(coincidencias)})", coincidencias, key="cliente_elegido",
-                                           format_func=lambda c: f"{c['nombre']} · {c['documento']}")
-                    if st.button("Seleccionar cliente", type="primary"):
+                                           format_func=lambda c: f"{c['nombre']} · {documento_cliente(c)}")
+                    if st.button("Seleccionar cliente", type="primary", key="seleccionar_coincidencia"):
                         st.session_state.cliente = elegido
                         st.rerun()
                 else:
                     st.info("No hay clientes con ese documento o nombre. Puedes registrarlo como cliente nuevo.")
+
+            st.markdown("**Búsqueda exacta por tipo y número**")
+            with st.form("busqueda_exacta", border=False):
+                tipo_col, num_col = st.columns(2)
+                tipo_b = tipo_col.selectbox("Tipo de documento", ["Todos", *TIPOS_DOCUMENTO], key="exacta_tipo")
+                numero_b = num_col.text_input("Número", key="exacta_numero", placeholder="Ej.: 1020304050")
+                st.caption("«Todos» también encuentra a los clientes sin clasificar.")
+                if st.form_submit_button("Buscar", icon=":material/person_search:"):
+                    st.session_state.exacta = buscar_exacto(numero_b.strip(), None if tipo_b == "Todos" else tipo_b)
+            exacta = st.session_state.get("exacta", {})
+            if "cliente" in exacta:
+                c = exacta["cliente"]
+                with st.container(border=True, key="tarjeta_exacta"):
+                    st.markdown(f":primary[:material/person:] **{c['nombre']}** · Tipo de documento: "
+                                f"**{tipo_doc(c['tipo'])}** · Número {c['documento']}  \n{c['correo']} · {c['telefono']}")
+                    if st.button("Seleccionar cliente", type="primary", key="seleccionar_exacta"):
+                        st.session_state.cliente = c
+                        del st.session_state["exacta"]
+                        st.rerun()
+            elif "aviso" in exacta:
+                st.warning(exacta["aviso"], icon=exacta["icono"])
+            elif "error" in exacta:
+                st.error(exacta["error"], icon=":material/error:")
         with nuevo, st.expander("Registrar cliente nuevo", icon=":material/person_add:"):
             with st.form("cliente_nuevo"):
-                documento = st.text_input("Documento")
-                nombre = st.text_input("Nombre completo")
+                tipo_nuevo = st.selectbox("Tipo de documento", TIPOS_DOCUMENTO, index=None, format_func=NOMBRES_TIPO.get,
+                                          placeholder="Elige el tipo")
+                documento = st.text_input("Número de documento", help=REGLAS_DOCUMENTO)
+                nombre = st.text_input("Nombre o razón social")
                 correo = st.text_input("Correo")
                 telefono = st.text_input("Teléfono")
                 if st.form_submit_button("Registrar cliente", type="primary"):
-                    try:
-                        nuevo_cliente = schemas.ClienteCreate(documento=documento, nombre=nombre,
-                                                              correo=correo, telefono=telefono)
-                    except ValidationError as e:
-                        st.warning(aviso_validacion(e))
+                    if tipo_nuevo is None:
+                        st.warning("Revisa los datos. Elige el tipo de documento.")
                     else:
-                        r = api_client.post("/clientes/", nuevo_cliente.model_dump(mode="json"))
-                        if r.status_code == 201:
-                            st.session_state.cliente = r.json()     # queda seleccionado
-                            leer.clear()
-                            st.rerun()
-                        st.error(f"No se pudo registrar el cliente: {api_client.detalle_error(r)}")
+                        try:
+                            # El DTO del backend aplica la misma regla del documento según el tipo
+                            nuevo_cliente = schemas.ClienteCreate(tipo=tipo_nuevo, documento=documento, nombre=nombre,
+                                                                  correo=correo, telefono=telefono)
+                        except ValidationError as e:
+                            st.warning(aviso_validacion(e))
+                        else:
+                            try:
+                                r = api_client.crear_cliente(nuevo_cliente.model_dump(mode="json"))
+                            except requests.RequestException:
+                                st.error("No hay conexión con la API: no se registró el cliente. Inténtalo de nuevo.")
+                            else:
+                                if r.status_code == 201:
+                                    st.session_state.cliente = r.json()     # queda seleccionado
+                                    leer.clear()
+                                    st.rerun()
+                                st.error(f"No se pudo registrar el cliente: {api_client.detalle_error(r)}")
 
     # ─────────────────────────────── 3. Pasajeros y registro ───────────────────────────────
     st.header("Pasajeros y registro")
@@ -384,7 +438,8 @@ with flujo:
                         # Lista: la reserva en curso, el cliente y los pasajeros se limpian para la siguiente
                         estado.resultado = r.json()
                         estado.reserva, estado.cliente = [], None
-                        for clave in [k for k in estado if str(k).startswith(("pas_", "n_pasajeros", "busqueda_cliente"))]:
+                        for clave in [k for k in estado if str(k).startswith(("pas_", "n_pasajeros", "busqueda_cliente",
+                                                                               "exacta"))]:
                             del estado[clave]
                         leer.clear()
                         st.rerun()

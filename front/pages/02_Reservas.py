@@ -8,7 +8,8 @@ import streamlit as st
 from pydantic import ValidationError
 
 import api_client
-from estilo import INICIO, aplicar_estilo, encabezado_modulo, hora_bogota, pesos, requerir_asesor
+from estilo import (INICIO, TIPOS_DOCUMENTO, aplicar_estilo, documento_cliente, encabezado_modulo, hora_bogota,
+                    pesos, requerir_asesor)
 
 # Mismos DTO del backend para pre-validar antes de tocar la red
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -181,7 +182,7 @@ def detalle(codigo: str):
     with etiqueta, st.container(horizontal_alignment="right"):
         st.badge(res["estado"], color=COLOR_ESTADO.get(res["estado"], "gray"))
     st.caption(f"Creada el {hora_bogota(res['creada'])} (hora de Bogotá) · Registrada por {res['asesor']} · "
-               f"Cliente: {res['cliente']['nombre']} ({res['cliente']['documento']})")
+               f"Cliente: {res['cliente']['nombre']} · Documento {documento_cliente(res['cliente'])}")
 
     total, pagado, saldo = st.columns(3)
     total.metric("Total", pesos(res["total"]), border=True)
@@ -248,8 +249,10 @@ with por_codigo, st.form("abrir_codigo", border=False):
         else:
             st.warning("Escribe el código de la reserva.")
 with filtros:
-    estado_col, doc_col = st.columns(2)
+    estado_col, tipo_col, doc_col = st.columns([3, 2, 3])
     estado = estado_col.selectbox("Estado", ESTADOS, key="res_estado")
+    tipo = tipo_col.selectbox("Tipo de documento", ["Todos", *TIPOS_DOCUMENTO], key="res_tipo",
+                              help="«Todos» incluye las reservas de clientes sin clasificar.")
     documento = doc_col.text_input("Documento del cliente", key="res_documento", placeholder="Ej.: 1020304050")
 st.divider()
 
@@ -260,7 +263,7 @@ if "res_codigo" in st.session_state:
 # ─────────────────────────────── Lista ───────────────────────────────
 try:
     r = api_client.listar_reservas(estado=None if estado == "Todas" else estado,
-                                   documento=documento.strip() or None)
+                                   documento=documento.strip() or None, tipo=None if tipo == "Todos" else tipo)
 except requests.RequestException:
     st.warning("No hay conexión con la API. Inténtalo de nuevo en un momento.")
     st.stop()
@@ -277,7 +280,7 @@ for res in reservas:
     with st.container(border=True, key=f"panel_reserva_{res['codigo']}"):
         ident, est, total, pagado, saldo, accion = st.columns([2.6, 1.7, 1.2, 1.2, 1.2, 1.2],
                                                               vertical_alignment="center")
-        ident.markdown(f"**{res['codigo']}**  \n{res['cliente']['nombre']} · {res['cliente']['documento']}")
+        ident.markdown(f"**{res['codigo']}**  \n{res['cliente']['nombre']} · {documento_cliente(res['cliente'])}")
         est.badge(res["estado"], color=COLOR_ESTADO.get(res["estado"], "gray"))
         est.caption(hora_bogota(res["creada"]))
         total.markdown(f":gray[Total]  \n**{pesos(res['total'], markdown=True)}**")

@@ -119,6 +119,25 @@ def pesos(valor, markdown: bool = False) -> str:
     return ("\\$\u00a0" if markdown else "$\u00a0") + f"{round(valor):,}".replace(",", ".")
 
 
+TIPOS_DOCUMENTO = ["CC", "CE", "NIT", "Pasaporte"]         # mismo orden que schemas.TipoDocumento
+NOMBRES_TIPO = {"CC": "CC · Cédula de ciudadanía", "CE": "CE · Cédula de extranjería",
+                "NIT": "NIT · Sin dígito de verificación", "Pasaporte": "Pasaporte"}
+# Ayuda del campo número; la regla que manda es schemas.validar_documento (backend)
+REGLAS_DOCUMENTO = ("CC y NIT: solo dígitos, de 5 a 10 (el NIT sin dígito de verificación). Pasaporte: letras y "
+                    "dígitos, de 5 a 20. CE: de 5 a 20 caracteres.")
+
+
+def tipo_doc(tipo: str | None) -> str:
+    """Tipo de documento para mostrar: los clientes registrados antes de los tipos salen "Sin clasificar"."""
+    return tipo or "Sin clasificar"
+
+
+def documento_cliente(cliente: dict) -> str:
+    """Cliente o copia de reserva -> "CC 1020304050", o "1020304050 (Sin clasificar)" si no tiene tipo."""
+    tipo = cliente.get("tipo")
+    return f"{tipo} {cliente['documento']}" if tipo else f"{cliente['documento']} ({tipo_doc(tipo)})"
+
+
 def hora_bogota(iso: str) -> str:
     """Fecha ISO con zona (como la manda la API) en hora de Bogotá: 16/11/2026 07:00"""
     return datetime.fromisoformat(iso).astimezone(BOGOTA).strftime("%d/%m/%Y %H:%M")

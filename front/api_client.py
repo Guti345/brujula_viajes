@@ -26,13 +26,15 @@ def api_en_linea() -> bool:
 
 def detalle_error(respuesta) -> str:
     """El "detail" de un 404/409 es texto y el de un 422 de Pydantic es una lista de objetos con
-    "msg": ambos se vuelven una sola línea legible."""
+    "msg": ambos se vuelven una sola línea legible. Las reglas propias (documento según su tipo) llegan
+    como "Value error, <mensaje>": se muestra solo el mensaje."""
     try:
         detalle = respuesta.json().get("detail")
     except ValueError:
         detalle = None
     if isinstance(detalle, list):
-        texto = "; ".join(str(e.get("msg", e)) if isinstance(e, dict) else str(e) for e in detalle)
+        texto = "; ".join(str(e.get("msg", e)).removeprefix("Value error, ") if isinstance(e, dict) else str(e)
+                          for e in detalle)
     else:
         texto = str(detalle) if detalle else f"La API respondió con el código {respuesta.status_code}"
     return texto.rstrip(".") + "."
@@ -62,8 +64,10 @@ def mapa_asesores() -> dict:
     return {a["codigo"]: a["nombre"] for a in get("/asesores/").json()}
 
 
-def listar_reservas(estado: str | None = None, documento: str | None = None, limite: int = 50):
-    params = {"estado": estado, "cliente": documento, "limite": limite}
+def listar_reservas(estado: str | None = None, documento: str | None = None, tipo: str | None = None,
+                    limite: int = 50):
+    """Sin tipo filtra solo por documento; con tipo, por el de la copia del cliente (null en las viejas)."""
+    params = {"estado": estado, "cliente": documento, "tipo": tipo, "limite": limite}
     return get("/reservas/", **{k: v for k, v in params.items() if v is not None})
 
 
@@ -109,6 +113,13 @@ def listar_clientes():
     return get("/clientes/")
 
 
+def buscar_cliente(documento: str, tipo: str | None = None):
+    """Búsqueda exacta. Sin tipo encuentra también a los clientes sin clasificar. Códigos que la página
+    distingue: 200 el cliente; 404 no existe; 409 el número está en más de un tipo y hay que indicarlo."""
+    params = {"tipo": tipo} if tipo else {}
+    return get(f"/clientes/{quote(documento, safe='')}", **params)   # el número lo digita el asesor
+
+
 def crear_vuelo(datos: dict):
     return post("/vuelos/", datos)
 
@@ -134,6 +145,7 @@ def crear_paquete(datos: dict):
 
 
 def crear_cliente(datos: dict):
+    """El cuerpo lleva el tipo (CC, CE, NIT o Pasaporte); la identidad del cliente es tipo + documento."""
     return post("/clientes/", datos)
 
 

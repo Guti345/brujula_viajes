@@ -9,7 +9,8 @@ import streamlit as st
 from pydantic import ValidationError
 
 import api_client
-from estilo import BOGOTA, aplicar_estilo, encabezado_modulo, hora_bogota, pesos, requerir_asesor
+from estilo import (BOGOTA, NOMBRES_TIPO, REGLAS_DOCUMENTO, TIPOS_DOCUMENTO, aplicar_estilo, documento_cliente,
+                    encabezado_modulo, hora_bogota, pesos, requerir_asesor, tipo_doc)
 
 # Mismos DTO del backend para pre-validar antes de tocar la red
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -537,28 +538,36 @@ with t_paquetes:
 # ─────────────────────────────── Clientes ───────────────────────────────
 with t_clientes:
     aviso("clientes")
-    encabezado_tab("Clientes", "Clientes registrados, por nombre. El documento identifica a cada cliente.")
+    encabezado_tab("Clientes", "Clientes registrados, por nombre. El tipo y el número de documento identifican a "
+                               "cada cliente.")
     clientes = leer("listar_clientes")
     if not sin_lista(clientes, "clientes"):
-        st.table([{"Documento": c["documento"], "Nombre": c["nombre"], "Correo": c["correo"],
-                   "Teléfono": c["telefono"]} for c in clientes], hide_index=True)
+        st.table([{"Tipo": tipo_doc(c["tipo"]), "Documento": c["documento"], "Nombre o razón social": c["nombre"],
+                   "Correo": c["correo"], "Teléfono": c["telefono"]} for c in clientes], hide_index=True)
 
     with st.expander("Registrar cliente", icon=":material/person_add:", key="exp_cliente"):
         with st.form("cl_form", border=False):
-            doc_col, nom_col = st.columns(2)
-            documento = doc_col.text_input("Documento", key="cl_documento")
-            nombre = nom_col.text_input("Nombre completo", key="cl_nombre")
+            tip_col, doc_col, nom_col = st.columns([2, 2, 3])
+            tipo_cl = tip_col.selectbox("Tipo de documento", TIPOS_DOCUMENTO, index=None, format_func=NOMBRES_TIPO.get,
+                                        key="cl_tipo", placeholder="Elige el tipo")
+            documento = doc_col.text_input("Número de documento", key="cl_documento", help=REGLAS_DOCUMENTO)
+            nombre = nom_col.text_input("Nombre o razón social", key="cl_nombre")
             cor_col, tel_col = st.columns(2)
             correo = cor_col.text_input("Correo", key="cl_correo")
             telefono = tel_col.text_input("Teléfono", key="cl_telefono")
             enviar = st.form_submit_button("Registrar cliente", type="primary", icon=":material/check:")
         if enviar:
-            try:
-                cliente = schemas.ClienteCreate(documento=documento, nombre=nombre, correo=correo, telefono=telefono)
-            except ValidationError as e:
-                st.warning(aviso_validacion(e))
+            if tipo_cl is None:
+                st.warning("Revisa los datos. Elige el tipo de documento.")
             else:
-                registrar(lambda: api_client.crear_cliente(cliente.model_dump(mode="json", exclude_none=True)),
-                          pestana="clientes", prefijo="cl_", que="el cliente",
-                          exito=lambda c: f"Se registró a {c['nombre']} (documento {c['documento']}) como cliente.",
-                          pista_duplicado="Ya hay un cliente registrado con ese documento.")
+                try:
+                    # El DTO del backend aplica la misma regla del documento según el tipo
+                    cliente = schemas.ClienteCreate(tipo=tipo_cl, documento=documento, nombre=nombre, correo=correo,
+                                                    telefono=telefono)
+                except ValidationError as e:
+                    st.warning(aviso_validacion(e))
+                else:
+                    registrar(lambda: api_client.crear_cliente(cliente.model_dump(mode="json", exclude_none=True)),
+                              pestana="clientes", prefijo="cl_", que="el cliente",
+                              exito=lambda c: f"Se registró a {c['nombre']} (documento {documento_cliente(c)}) como cliente.",
+                              pista_duplicado="Ya hay un cliente registrado con ese documento.")

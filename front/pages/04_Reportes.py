@@ -18,9 +18,6 @@ encabezado_modulo("Reportes", "Las ventas, los destinos y la ocupación, en cifr
 MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre",
          "Noviembre", "Diciembre"]
 SERIES = ["Total vendido", "Reservas"]
-# (latitud, longitud) verificadas en OpenStreetMap/Nominatim el 2026-11-06
-COORDENADAS = {"BOG": (4.6533817, -74.0836331), "CTG": (10.4265566, -75.5441671), "SMR": (11.2320944, -74.1950916),
-               "MDE": (6.2697324, -75.6025597), "ADZ": (12.5830104, -81.6975682), "CLO": (3.4108435, -76.5812127)}
 # Lado del círculo donde va el nombre: Cartagena y Santa Marta están cerca, así que sus nombres van
 # hacia lados opuestos. Las ciudades que no aparecen aquí llevan el nombre a la derecha.
 NOMBRE_A_LA_IZQUIERDA = {"CTG", "MDE", "CLO"}
@@ -59,6 +56,16 @@ def consultar(consulta: str, que: str, aviso: bool = True):
 def porcentaje(valor: float) -> str:
     """53.8 -> 53,8 % (coma decimal y espacio no separable antes del signo)"""
     return f"{valor:.1f}".replace(".", ",") + " %"
+
+
+def coordenada(ciudad: dict) -> tuple[float, float] | None:
+    """(latitud, longitud) de la ubicación GeoJSON que entrega GET /ciudades/, o None si la ciudad no la
+    tiene. GeoJSON guarda [longitud, latitud]: primero la longitud."""
+    try:
+        lon, lat = ciudad["ubicacion"]["coordinates"]
+    except (KeyError, TypeError, ValueError):
+        return None
+    return lat, lon
 
 
 def tono(fraccion: float) -> list[int]:
@@ -129,9 +136,11 @@ if destinos == []:
 elif destinos:
     ciudades = consultar("listar_ciudades", "los nombres de las ciudades", aviso=False)
     if ciudades is None:
-        st.caption("No se pudieron consultar los nombres de las ciudades: se muestran sus códigos.")
+        st.caption("No se pudieron consultar las ciudades: se muestran sus códigos y no hay coordenadas para el mapa.")
     nombres = {c["iata"]: c["nombre"] for c in ciudades or []}
     nombre = lambda iata: nombres.get(iata, iata)
+    # Coordenadas solo desde la API: una ciudad sin ubicación no se dibuja
+    coordenadas = {c["iata"]: coordenada(c) for c in ciudades or [] if coordenada(c)}
 
     mapa, ranking = st.columns([3, 2], gap="large")
     with ranking:
@@ -141,18 +150,18 @@ elif destinos:
         st.caption("Pasajeros contados por ítems de vuelo y paquete; una misma persona puede contarse más de una "
                    "vez. No incluye reservas canceladas. Solo los 5 destinos con más ingresos.")
     with mapa:
-        sin_coordenada = [nombre(d["ciudad"]) for d in destinos if d["ciudad"] not in COORDENADAS]
+        sin_coordenada = [nombre(d["ciudad"]) for d in destinos if d["ciudad"] not in coordenadas]
         if sin_coordenada:
             st.warning(f"No hay coordenadas para {', '.join(sin_coordenada)}: no se dibuja en el mapa, pero sí "
                        "aparece en el ranking.", icon=":material/location_off:")
         # pydeck lee como expresión todo texto sin comillas: los valores literales van entre comillas
-        en_mapa = [d for d in destinos if d["ciudad"] in COORDENADAS]
+        en_mapa = [d for d in destinos if d["ciudad"] in coordenadas]
         if en_mapa:
             mas_ingresos = max(d["ingresos"] for d in en_mapa) or 1
             menos_pas, mas_pas = min(d["pasajeros"] for d in en_mapa), max(d["pasajeros"] for d in en_mapa)
             puntos = []
             for d in en_mapa:
-                lat, lon = COORDENADAS[d["ciudad"]]
+                lat, lon = coordenadas[d["ciudad"]]
                 radio = RADIO_MAX * math.sqrt(max(d["ingresos"], 0) / mas_ingresos)   # área ∝ ingresos
                 izquierda = d["ciudad"] in NOMBRE_A_LA_IZQUIERDA
                 # El nombre se ancla al borde del círculo (en metros), así no lo tapa con ningún zoom
@@ -172,7 +181,7 @@ elif destinos:
                                 font_family="'Nunito Sans, sans-serif'", font_weight=700)
             ayuda_mapa = {"html": "<b>{nombre}</b><br/>Ingresos: {ingresos_txt}<br/>Pasajeros: {pasajeros}",
                           "style": {"backgroundColor": AZUL_MARINO, "color": "white", "fontSize": "14px"}}
-            # Vista fija que encuadra todas las ciudades de la tabla, San Andrés incluida
+            # Vista fija sobre Colombia, San Andrés incluida
             vista = pdk.ViewState(latitude=8.0, longitude=-77.6, zoom=4.9)
             st.pydeck_chart(pdk.Deck(layers=[circulos, rotulos], initial_view_state=vista, tooltip=ayuda_mapa,
                                      map_provider="carto", map_style=pdk.map_styles.CARTO_LIGHT_NO_LABELS),
