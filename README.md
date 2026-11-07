@@ -63,11 +63,15 @@ El `.env` no se sube al repositorio porque ya está en `.gitignore`.
 
 ## Validadores e índices
 
-Crea las colecciones con sus validadores e índices. Se puede repetir sin riesgo: si una colección ya existe, actualiza su validador con `collMod`. Los documentos existentes no se revalidan; las reglas aplican a las escrituras nuevas. La API también ejecuta este paso al arrancar.
+Crea las colecciones con sus validadores e índices. Se puede repetir sin riesgo: si una colección ya existe, actualiza su validador con `collMod`. Los documentos existentes no se revalidan; las reglas aplican a las escrituras nuevas.
+
+Este paso tiene un candado: solo se aplica si la variable `BRUJULA_APLICAR_ESQUEMA` vale exactamente `si`. Sin ella, tanto este comando como el arranque de la API omiten el esquema y no tocan la base (la API deja en el log la línea `init_db omitido`). Así, levantar la API con código nuevo no cambia los validadores ni los índices de una base existente. La carga de datos de inicio (`datos_mongo.py`) abre el candado por su cuenta, después de verificar el nombre de la base.
 
 ```powershell
-cd back; python -m app.database; cd ..
+cd back; $env:BRUJULA_APLICAR_ESQUEMA = "si"; python -m app.database; Remove-Item Env:BRUJULA_APLICAR_ESQUEMA; cd ..
 ```
+
+Quita la variable al terminar, como en el comando, para que el siguiente arranque de la API en esa terminal no aplique el esquema sin querer.
 
 ## Datos de inicio
 

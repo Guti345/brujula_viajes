@@ -11,10 +11,13 @@ La validación de endpoints y reglas de negocio se hace manualmente en Swagger
 
     cd back; python datos_mongo.py
 
+Aplica validadores e índices (abre el candado BRUJULA_APLICAR_ESQUEMA solo para esta ejecución).
+
 ⚠️ BORRA y vuelve a llenar la base brujula_viajes. No tiene vuelta atrás: todo dato que no venga
 de este script se pierde. Si la configuración apunta a otra base, aborta sin crear, borrar ni
 escribir nada.
 """
+import os
 import sys
 from datetime import date, datetime, timedelta
 
@@ -50,9 +53,15 @@ def cargar_catalogo(post, hoy):
     dia = lambda n: (hoy + timedelta(days=n)).isoformat()
 
     print("Catálogo")
-    for iata, nombre in [("BOG", "Bogotá"), ("CTG", "Cartagena"), ("SMR", "Santa Marta"),
-                         ("MDE", "Medellín"), ("ADZ", "San Andrés"), ("CLO", "Cali")]:
-        post("/ciudades/", {"iata": iata, "nombre": nombre})
+    # Centro de cada ciudad (no el aeropuerto), verificado en OpenStreetMap/Nominatim el 2026-11-06.
+    # GeoJSON: primero la longitud, luego la latitud.
+    for iata, nombre, coords in [("BOG", "Bogotá", [-74.0836331, 4.6533817]),
+                                 ("CTG", "Cartagena", [-75.5441671, 10.4265566]),
+                                 ("SMR", "Santa Marta", [-74.1950916, 11.2320944]),
+                                 ("MDE", "Medellín", [-75.6025597, 6.2697324]),
+                                 ("ADZ", "San Andrés", [-81.6975682, 12.5830104]),
+                                 ("CLO", "Cali", [-76.5812127, 3.4108435])]:
+        post("/ciudades/", {"iata": iata, "nombre": nombre, "ubicacion": {"type": "Point", "coordinates": coords}})
 
     def tarifas(basica, sillas_b=60):
         return [{"nombre": "Basica", "precio": basica, "equipaje": "Artículo personal", "sillas": sillas_b},
@@ -147,37 +156,41 @@ def cargar_catalogo(post, hoy):
 def cargar_personas(post):
     print("Clientes y asesores")
     c = {}
-    for doc, nombre, correo, tel, nacimiento, pref in [
-        ("1020304050", "Laura Gomez", "laura@mail.com", "3001234567", "1998-04-12",
+    for tipo, doc, nombre, correo, tel, nacimiento, pref in [
+        ("CC", "1020304050", "Laura Gomez", "laura@mail.com", "3001234567", "1998-04-12",
          {"favoritos": ["CTG", "SMR"], "presupuesto": 3500000, "con_ninos": False}),
-        ("79856412", "Andres Rojas", "andres.rojas@mail.com", "3157894561", "1985-02-20", None),
-        ("1032456789", "Camila Torres", "camila.t@mail.com", "3204567812", "1990-05-30",
+        ("CC", "79856412", "Andres Rojas", "andres.rojas@mail.com", "3157894561", "1985-02-20", None),
+        ("CC", "1032456789", "Camila Torres", "camila.t@mail.com", "3204567812", "1990-05-30",
          {"favoritos": ["CTG"], "presupuesto": 6000000, "con_ninos": True}),
-        ("52114789", "Marcela Vargas", "marcela.v@mail.com", "3112223344", "1979-11-02",
+        ("CC", "52114789", "Marcela Vargas", "marcela.v@mail.com", "3112223344", "1979-11-02",
          {"favoritos": ["MDE"], "presupuesto": 8000000, "con_ninos": True}),
-        ("80123456", "Felipe Castro", "fcastro@mail.com", "3123334455", "1982-08-17", None),
-        ("1015998877", "Valentina Rios", "vale.rios@mail.com", "3134445566", "1996-01-25",
+        ("CC", "80123456", "Felipe Castro", "fcastro@mail.com", "3123334455", "1982-08-17", None),
+        ("CC", "1015998877", "Valentina Rios", "vale.rios@mail.com", "3134445566", "1996-01-25",
          {"favoritos": ["SMR", "ADZ"], "presupuesto": 2500000, "con_ninos": False}),
-        ("1098765432", "Santiago Mejia", "smejia@mail.com", "3145556677", "1994-06-09", None),
-        ("43567123", "Gloria Ospina", "gloria.ospina@mail.com", "3006667788", "1971-03-14",
+        ("CC", "1098765432", "Santiago Mejia", "smejia@mail.com", "3145556677", "1994-06-09", None),
+        ("CC", "43567123", "Gloria Ospina", "gloria.ospina@mail.com", "3006667788", "1971-03-14",
          {"favoritos": ["CTG", "CLO"], "presupuesto": 5000000, "con_ninos": False}),
-        ("1144056789", "Daniel Mosquera", "dmosquera@mail.com", "3167778899", "1992-10-30", None),
-        ("66998877", "Patricia Lozano", "plozano@mail.com", "3178889900", "1975-12-05",
+        ("CC", "1144056789", "Daniel Mosquera", "dmosquera@mail.com", "3167778899", "1992-10-30", None),
+        ("CE", "66998877", "Patricia Lozano", "plozano@mail.com", "3178889900", "1975-12-05",
          {"favoritos": ["ADZ"], "presupuesto": 4000000, "con_ninos": True}),
-        ("1023456001", "Juan Pablo Niño", "jpnino@mail.com", "3189990011", "2000-07-21", None),
-        ("1007654321", "Isabella Herrera", "isa.herrera@mail.com", "3190001122", "2001-02-11",
+        ("CC", "1023456001", "Juan Pablo Niño", "jpnino@mail.com", "3189990011", "2000-07-21", None),
+        ("CC", "1007654321", "Isabella Herrera", "isa.herrera@mail.com", "3190001122", "2001-02-11",
          {"favoritos": ["SMR"], "presupuesto": 1800000, "con_ninos": False}),
-        ("71234567", "Ricardo Salazar", "rsalazar@mail.com", "3101112233", "1968-09-28", None),
-        ("1053778899", "Natalia Cardenas", "ncardenas@mail.com", "3209998877", "1989-04-03",
+        ("Pasaporte", "PA183745", "Ricardo Salazar", "rsalazar@mail.com", "3101112233", "1968-09-28", None),
+        ("CC", "1053778899", "Natalia Cardenas", "ncardenas@mail.com", "3209998877", "1989-04-03",
          {"favoritos": ["MDE", "CTG"], "presupuesto": 7000000, "con_ninos": True}),
-        ("1088223344", "Sebastian Ortiz", "sortiz@mail.com", "3218887766", "1997-05-16", None),
-        ("39445566", "Claudia Beltran", "cbeltran@mail.com", "3227776655", "1980-01-19",
+        ("CC", "1088223344", "Sebastian Ortiz", "sortiz@mail.com", "3218887766", "1997-05-16", None),
+        ("CC", "39445566", "Claudia Beltran", "cbeltran@mail.com", "3227776655", "1980-01-19",
          {"favoritos": ["CLO"], "presupuesto": 3000000, "con_ninos": False}),
     ]:
-        datos = {"documento": doc, "nombre": nombre, "correo": correo, "telefono": tel}
+        datos = {"tipo": tipo, "documento": doc, "nombre": nombre, "correo": correo, "telefono": tel}
         if pref:
             datos["preferencias"] = pref
         c[doc] = {"id": post("/clientes/", datos)["id"], "pasajero": (nombre, doc, nacimiento)}
+    # Empresa (NIT sin dígito de verificación, razón social ficticia). Queda fuera de `c` a propósito:
+    # no tiene reservas ni puede aparecer como pasajera.
+    post("/clientes/", {"tipo": "NIT", "documento": "901234567", "nombre": "Eventos y Logística Andina S.A.S.",
+                        "correo": "contacto@eventosandina.com", "telefono": "6017654321"})
     a = {}
     for cod, nombre, correo, activo in [("AS-01", "Carlos Perez", "cperez@brujula.co", True),
                                         ("AS-02", "Diana Ruiz", "druiz@brujula.co", True),
@@ -226,7 +239,7 @@ def cargar_reservas(post, cat, c, a, dia):
         (13, 1, 17, "1007654321", "AS-02", vuelos("WG7310", "WG7311", "Clasica", 2) + tour("johnny", 26, 2),
          [("Tarjeta", .5), ("PSE", None)], False),
         (14, 1, 21, "1088223344", "AS-01", paquete("smr", 2), [], False),
-        (15, 1, 25, "71234567", "AS-02", hotel("murallas", "Suite", 33, 2, 2), [("Efectivo", None)], False),
+        (15, 1, 25, "PA183745", "AS-02", hotel("murallas", "Suite", 33, 2, 2), [("Efectivo", None)], False),
 
         (16, 0, None, "39445566", "AS-01", paquete("mde", 2), [("Tarjeta", None)], False),
         (17, 0, None, "79856412", "AS-01", hotel("coral", "Doble", 25, 3, 2), [], False),   # agota la única Doble
@@ -314,11 +327,13 @@ def fechar_reservas(db, creadas, hoy):
 
 def main():
     candado()                                          # antes de drop_database y de TestClient
+    # Base verificada: esta reconstrucción SÍ aplica validadores e índices (candado de init_db)
+    os.environ["BRUJULA_APLICAR_ESQUEMA"] = "si"
     hoy = datetime.now(BOGOTA).date()
     dia = lambda n: (hoy + timedelta(days=n)).isoformat()
     print(f"Hoy en Bogotá: {hoy}")
     client.drop_database(DB_NAME)
-    with TestClient(app) as api:                       # dispara init_db() (validadores + índices)
+    with TestClient(app) as api:                       # dispara init_db() con el candado abierto
         post = lambda url, d: llamar(api, "POST", url, d)
 
         cat = cargar_catalogo(post, hoy)

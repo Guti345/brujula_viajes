@@ -11,6 +11,7 @@ Convenciones:
     convierte a 00:00 UTC antes de guardar, porque BSON no tiene un tipo "solo fecha".
   * Precios: number (float en Python, double en Mongo).
 """
+import re
 from datetime import date, datetime
 from typing import Annotated, Any, Literal, Union
 
@@ -32,6 +33,7 @@ TipoHab = Literal["Sencilla", "Doble", "Familiar", "Suite"]
 NombreTarifa = Literal["Basica", "Clasica", "Flexible"]
 Estado = Literal["Pendiente", "Pagada", "Cancelada"]
 Medio = Literal["Efectivo", "Tarjeta", "Transferencia", "PSE"]
+TipoDocumento = Literal["CC", "CE", "NIT", "Pasaporte"]
 
 Iata = Annotated[str, Field(pattern=r"^[A-Z]{3}$", examples=["CTG"])]
 Dinero = Annotated[int, Field(ge=0)]          # pesos COP enteros (ver nota de sumas exactas)
@@ -90,11 +92,15 @@ class Punto(Entrada):
 class CiudadCreate(Entrada):
     iata: Iata
     nombre: Texto
+    # Sin ubicación el campo se OMITE al serializar: el router guarda model_dump() completo y el
+    # validador de la base (POINT) no acepta null
+    ubicacion: Punto | None = Field(None, exclude_if=lambda v: v is None)
 
 
 class CiudadResponse(Salida):
     iata: str
     nombre: str
+    ubicacion: dict | None = None
 
 
 # ─────────────────────────────── vuelos ───────────────────────────────
@@ -319,15 +325,49 @@ class Preferencias(Entrada):
     con_ninos: bool = False
 
 
+def validar_documento(tipo: str | None, documento: str) -> str | None:
+    """Mensaje de error si `documento` no cumple la regla de `tipo`, o None si la cumple. Sin tipo no
+    hay regla nueva (clientes de antes de los tipos). Solo se usa al crear un cliente CON tipo y al
+    clasificar uno existente (PATCH): la lectura de históricos nunca re-valida."""
+    if tipo is None:
+        return None
+    if not 5 <= len(documento) <= 20:                  # cota general, igual para todos los tipos
+        return f"El documento de tipo {tipo} debe tener entre 5 y 20 caracteres"
+    # CC: el NUIP tiene 10 dígitos desde 1.000.000.000 (Registraduría) y las cédulas anteriores, con
+    # menos dígitos, siguen vigentes. El piso es la cota general de 5.
+    if tipo == "CC" and not re.fullmatch(r"[0-9]{1,10}", documento):
+        return "El documento de tipo CC lleva solo dígitos, máximo 10"
+    # NIT sin dígito de verificación: el DV no hace parte del NIT (DIAN). Persona jurídica: 9 dígitos
+    # desde 800.000.000; persona natural: el número de su cédula, hasta 10 dígitos.
+    if tipo == "NIT" and not re.fullmatch(r"[0-9]{1,10}", documento):
+        return "El documento de tipo NIT lleva solo dígitos, máximo 10, sin guion ni dígito de verificación"
+    # Pasaporte: alfanumérico y cambia en cada expedición (Cancillería); no hay longitud oficial
+    # publicada, así que el máximo es la cota general de 20.
+    if tipo == "Pasaporte" and not re.fullmatch(r"[A-Za-z0-9]+", documento):
+        return "El documento de tipo Pasaporte lleva solo letras y dígitos, sin espacios ni símbolos"
+    # CE: sin regla propia A PROPÓSITO. No hay especificación oficial pública del formato del número
+    # (ni longitud ni si lleva letras, y las fuentes secundarias se contradicen): solo la cota general.
+    return None
+
+
 class ClienteCreate(Entrada):
+    tipo: TipoDocumento | None = None                # sin tipo: el campo se omite al guardar
     documento: Annotated[str, Field(min_length=5, max_length=20)]
-    nombre: Texto
+    nombre: Texto                                    # persona o razón social
     correo: EmailStr
     telefono: Annotated[str, Field(min_length=7, max_length=15)]
     preferencias: Preferencias | None = None
 
+    @model_validator(mode="after")
+    def _documento_segun_tipo(self):
+        error = validar_documento(self.tipo, self.documento)
+        if error:
+            raise ValueError(error)
+        return self
+
 
 class ClienteResponse(Salida):
+    tipo: TipoDocumento | None = None                # null en los clientes sin tipo
     documento: str
     nombre: str
     correo: str
@@ -447,6 +487,7 @@ class EventoResponse(BaseModel):
 
 
 class ClienteCopia(BaseModel):
+    tipo: TipoDocumento | None = None                # null si el cliente no tenía tipo al reservar
     documento: str
     nombre: str
 
@@ -498,6 +539,7 @@ class TourUpdate(Entrada):
 
 
 class ClienteUpdate(Entrada):
+    tipo: TipoDocumento | None = None                # clasifica; un null no borra el tipo (el router lo quita)
     nombre: Texto | None = None
     correo: EmailStr | None = None
     telefono: Annotated[str, Field(min_length=7, max_length=15)] | None = None

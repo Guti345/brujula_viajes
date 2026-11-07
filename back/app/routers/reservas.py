@@ -23,7 +23,7 @@ from app.cotizacion import (
 from app.database import get_db
 from app.inventario import descontar_todo, devolver_todo
 from app.routers.asesores import asesor_activo
-from app.schemas import CancelarReserva, Estado, PagoCreate, ReservaCreate, ReservaResponse
+from app.schemas import CancelarReserva, Estado, PagoCreate, ReservaCreate, ReservaResponse, TipoDocumento
 from app.utils import a_mongo, a_utc, ahora, buscar_o_404, oid
 
 router = APIRouter()
@@ -37,6 +37,7 @@ def _nuevo_codigo(momento) -> str:
 @router.get("/", response_model=list[ReservaResponse])
 def listar_reservas(estado: Estado | None = None, ciudad: str | None = None,
                     cliente: str | None = Query(None, description="Documento del cliente"),
+                    tipo: TipoDocumento | None = Query(None, description="Tipo de documento del cliente"),
                     limite: int = Query(50, ge=1, le=200), db: Database = Depends(get_db)):
     filtro: dict = {}
     if estado:
@@ -45,6 +46,8 @@ def listar_reservas(estado: Estado | None = None, ciudad: str | None = None,
         filtro["items.ciudad"] = ciudad.upper()         # índice multikey {items.ciudad}
     if cliente:
         filtro["cliente.documento"] = cliente           # gracias a la copia, sin $lookup
+    if tipo:
+        filtro["cliente.tipo"] = tipo
     return list(db.reservas.find(filtro).sort("creada", -1).limit(limite))
 
 
@@ -78,10 +81,13 @@ def crear_reserva(datos: ReservaCreate, db: Database = Depends(get_db)):
     # 2. Descontar (SinDisponibilidad -> 409, ver handler en main.py)
     hechos = descontar_todo(db, movimientos)
 
-    # 3. Insertar
+    # 3. Insertar. La copia lleva el tipo solo si el cliente lo tiene: nunca se guarda tipo null
+    copia = {"documento": cliente["documento"], "nombre": cliente["nombre"]}
+    if cliente.get("tipo"):
+        copia = {"tipo": cliente["tipo"], **copia}
     doc = {
         "cliente_id": cliente["_id"],
-        "cliente": {"documento": cliente["documento"], "nombre": cliente["nombre"]},
+        "cliente": copia,
         "asesor_id": asesor["_id"],
         "asesor": asesor["nombre"],
         "creada": momento,

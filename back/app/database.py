@@ -7,7 +7,10 @@ Equivalencias con el database.py de SQLAlchemy:
     Base.metadata.create_all()  -> init_db(): crea colecciones con validador $jsonSchema + índices
 
 Ejecutar una vez desde back/ (idempotente):  python -m app.database
+Candado: init_db() solo aplica validadores e índices con BRUJULA_APLICAR_ESQUEMA=si. Sin esa
+variable, ni el bootstrap ni el arranque de la API tocan el esquema de la base.
 """
+import logging
 import os
 
 from dotenv import load_dotenv
@@ -59,6 +62,7 @@ POINT = {  # GeoJSON Point: [lon, lat]
 TIPOS_HAB = ["Sencilla", "Doble", "Familiar", "Suite"]
 TARIFAS = ["Basica", "Clasica", "Flexible"]
 ESTADOS = ["Pendiente", "Pagada", "Cancelada"]
+TIPOS_DOC = ["CC", "CE", "NIT", "Pasaporte"]   # el enum no acepta null: sin tipo, el campo se omite
 MEDIOS = ["Efectivo", "Tarjeta", "Transferencia", "PSE"]
 
 
@@ -136,7 +140,7 @@ EVENTO = obj(
 
 # ─────────────────────────── Validadores por colección ───────────────────────────
 VALIDADORES: dict[str, dict] = {
-    "ciudades": {"$jsonSchema": obj({"iata": IATA, "nombre": STR}, ["iata", "nombre"])},
+    "ciudades": {"$jsonSchema": obj({"iata": IATA, "nombre": STR, "ubicacion": POINT}, ["iata", "nombre"])},
 
     # tarifas y habitaciones llevan minItems Y required: minItems solo se evalúa cuando el campo
     # existe, así que sin required un documento que omita el arreglo pasaría la validación.
@@ -205,7 +209,7 @@ VALIDADORES: dict[str, dict] = {
     ]},
 
     "clientes": {"$jsonSchema": obj(
-        {"documento": STR, "nombre": STR, "correo": STR, "telefono": STR,
+        {"tipo": {"enum": TIPOS_DOC}, "documento": STR, "nombre": STR, "correo": STR, "telefono": STR,
          "preferencias": obj({"favoritos": {"bsonType": "array", "items": IATA},
                               "presupuesto": NUM_POS, "con_ninos": BOOL})},
         ["documento", "nombre", "correo", "telefono"],
@@ -216,7 +220,8 @@ VALIDADORES: dict[str, dict] = {
     "reservas": {"$and": [
         {"$jsonSchema": obj(
             {"codigo": STR, "cliente_id": OID,
-             "cliente": obj({"documento": STR, "nombre": STR}, ["documento", "nombre"]),
+             "cliente": obj({"tipo": {"enum": TIPOS_DOC}, "documento": STR, "nombre": STR},
+                            ["documento", "nombre"]),
              "asesor_id": OID, "asesor": STR, "creada": DATE, "estado": {"enum": ESTADOS},
              "items": {"bsonType": "array", "items": ITEM},
              "pasajeros": {"bsonType": "array", "items": PASAJERO},
@@ -256,7 +261,11 @@ INDICES: dict[str, list[IndexModel]] = {
     ],
     "salidas": [IndexModel([("tour_id", ASCENDING), ("fecha", ASCENDING)], unique=True, name="ux_tour_fecha")],
     "paquetes": [IndexModel([("destino", ASCENDING), ("hasta", ASCENDING)], name="ix_destino_hasta")],
-    "clientes": [IndexModel([("documento", ASCENDING)], unique=True, name="ux_documento")],
+    # Identidad compuesta: el mismo número puede existir en dos tipos, el mismo par no. Un cliente sin
+    # tipo indexa con tipo null, así que dos clientes sin tipo tampoco pueden repetir número. La base
+    # real conserva el índice viejo ux_documento (único por número) hasta que Antonio la reconstruya.
+    "clientes": [IndexModel([("tipo", ASCENDING), ("documento", ASCENDING)], unique=True,
+                            name="ux_tipo_documento")],
     "asesores": [IndexModel([("codigo", ASCENDING)], unique=True, name="ux_codigo")],
     "reservas": [
         IndexModel([("codigo", ASCENDING)], unique=True, name="ux_codigo"),
@@ -266,9 +275,18 @@ INDICES: dict[str, list[IndexModel]] = {
 }
 
 
-def init_db(database: Database = db) -> None:
-    """Idempotente: crea o actualiza (collMod) validadores y crea los índices que falten."""
+CANDADO = "BRUJULA_APLICAR_ESQUEMA"
+
+
+def init_db(database: Database = db) -> bool:
+    """Idempotente: crea o actualiza (collMod) validadores y crea los índices que falten.
+    Solo con BRUJULA_APLICAR_ESQUEMA=si; sin el candado no toca nada y devuelve False."""
     client.admin.command("ping")  # falla rápido si Mongo no está arriba
+    if os.getenv(CANDADO) != "si":
+        logging.getLogger("brujula").warning(
+            "init_db omitido: %s no vale 'si'; no se aplicaron validadores ni índices en '%s'",
+            CANDADO, database.name)
+        return False
     existentes = set(database.list_collection_names())
     opciones = {"validationLevel": "strict", "validationAction": "error"}
 
@@ -280,8 +298,11 @@ def init_db(database: Database = db) -> None:
 
     for nombre, indices in INDICES.items():
         database[nombre].create_indexes(indices)
+    return True
 
 
 if __name__ == "__main__":
-    init_db()
-    print(f"[ok] {DB_NAME}: {len(VALIDADORES)} colecciones con validador e índices listos.")
+    if init_db():
+        print(f"[ok] {DB_NAME}: {len(VALIDADORES)} colecciones con validador e índices listos.")
+    else:
+        print(f"[omitido] {DB_NAME}: no se aplicó nada. El esquema solo se aplica con {CANDADO}=si.")
