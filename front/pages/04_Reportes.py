@@ -107,7 +107,7 @@ def leyenda_tamano(puntos: list[dict]) -> str:
              f'justify-content: center; flex: none"><span style="width: {2 * r:.1f}px; height: {2 * r:.1f}px; '
              f'border-radius: 50%; border: 1.5px solid {AZUL_MARINO}; background: rgba(10, 37, 64, 0.05); '
              f'box-sizing: border-box"></span></span>'
-             f'<span style="font-size: 13px"><b>{p["ingresos_txt"]}</b> · {p["nombre"]}</span></div>'
+             f'<span style="font-size: 13px"><b></b> · </span></div>'
              for p, r in zip(muestra, radios)]
     return (f'<div style="font-family: inherit; color: {AZUL_MARINO}">'
             f'<div style="font-weight: 700; margin-bottom: 4px">Área del círculo = ingresos</div>'
@@ -128,7 +128,6 @@ def leyenda_intensidad(puntos: list[dict]) -> str:
     claro, intenso = (f"rgba({r}, {g}, {b}, {ALFA / 255:.3f})" for r, g, b in (TONO_MIN, TONO_MAX))
     return (f'<div style="font-family: inherit; color: {AZUL_MARINO}">'
             f'<div style="font-weight: 700; margin-bottom: 6px">Intensidad del turquesa = pasajeros</div>'
-            f'{"".join(filas)}'
             f'<div style="display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: #5B6B7C">'
             f'<span>menos</span><span style="flex: 1; height: 8px; border-radius: 4px; '
             f'background: linear-gradient(90deg, {claro}, {intenso})"></span><span>más intenso = más pasajeros</span>'
