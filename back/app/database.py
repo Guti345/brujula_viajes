@@ -274,7 +274,12 @@ INDICES: dict[str, list[IndexModel]] = {
     ],
 }
 
-
+# Controla si este arranque aplica el esquema de MongoDB:
+# crea las colecciones faltantes y aplica los validadores e índices definidos.
+# El valor exacto "si" habilita esta rutina para la primera preparación
+# de la base o para aplicar cambios posteriores en el esquema.
+# Con "no" o sin la variable, se omite la rutina, pero los validadores
+# e índices existentes siguen activos y las operaciones de la API continúan.
 CANDADO = "BRUJULA_APLICAR_ESQUEMA"
 
 
